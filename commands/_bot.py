@@ -67,7 +67,7 @@ async def _run_bot(bot_name: str):
         Log.error(token_name + " is not defined in .env file")
         return
     if not config.owner_ids:
-        Log.error("OWNER_IDS is empty: Gideon n'obéit qu'aux owners, elle ne répondrait à personne.")
+        Log.error("OWNER_IDS is empty: Rosalie n'obéit qu'aux owners, elle ne répondrait à personne.")
         return
 
     bot = build_bot(config)

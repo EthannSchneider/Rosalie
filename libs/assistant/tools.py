@@ -1,4 +1,4 @@
-"""Outils que Gideon peut appeler (function calling Ollama).
+"""Outils que Rosalie peut appeler (function calling Ollama).
 
 Ajouter un outil = écrire une fonction async décorée par @tool.
 Les outils `dangerous=True` demandent une confirmation par bouton avant d'agir.
@@ -117,7 +117,7 @@ def _int(value, default: int, low: int, high: int) -> int:
 
 # --------------------------------------------------------------------------- Discord
 
-@tool("list_servers", "Liste les serveurs Discord où Gideon est présente.")
+@tool("list_servers", "Liste les serveurs Discord où Rosalie est présente.")
 async def list_servers(ctx: ToolContext) -> str:
     return "\n".join(f"- {g.name} (id {g.id}, {g.member_count} membres)" for g in ctx.bot.guilds) \
         or "Aucun serveur."
@@ -259,7 +259,7 @@ async def ban_member(ctx: ToolContext, member: str, reason: str = "", server: st
     return f"{target.display_name} a été banni de « {guild.name} »."
 
 
-@tool("set_status", "Change le statut « Joue à … » de Gideon.",
+@tool("set_status", "Change le statut « Joue à … » de Rosalie.",
       {"text": ("string", "Texte du statut (vide = aucun)")})
 async def set_status(ctx: ToolContext, text: str | None = None) -> str:
     await ctx.bot.change_presence(activity=discord.Game(text) if text else None)

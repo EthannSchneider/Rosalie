@@ -13,7 +13,7 @@ class CorrectionModal(discord.ui.Modal):
     def __init__(self, cog: "Training", message: discord.Message, original: str):
         super().__init__(
             discord.ui.InputText(
-                label="Réponse idéale de Gideon",
+                label="Réponse idéale de Rosalie",
                 style=discord.InputTextStyle.long,
                 value=original[:4000],
                 max_length=4000,
@@ -43,8 +43,8 @@ class CorrectionModal(discord.ui.Modal):
 class Training(discord.Cog):
     """Collecte d'exemples pour le fine-tuning de la personnalité.
 
-    - réagir ⭐ sur une réponse de Gideon  -> l'exemple est gardé tel quel
-    - clic droit > Applications > « Corriger (Gideon) » -> tu réécris la réponse idéale
+    - réagir ⭐ sur une réponse de Rosalie  -> l'exemple est gardé tel quel
+    - clic droit > Applications > « Corriger (Rosalie) » -> tu réécris la réponse idéale
     """
 
     def __init__(self, bot: discord.Bot):
@@ -75,13 +75,13 @@ class Training(discord.Cog):
         if entry is None or not self.save_sample(message, entry.content, source="star"):
             Log.warning("Star on a message not found in history, sample not saved")
 
-    @discord.message_command(name="Corriger (Gideon)")
+    @discord.message_command(name="Corriger (Rosalie)")
     async def correct(self, ctx: discord.ApplicationContext, message: discord.Message):
         if not await is_owner(self.bot, ctx.author):
             await ctx.respond("Je n'obéis qu'à mon créateur.", ephemeral=True)
             return
         if message.author.id != self.bot.user.id:
-            await ctx.respond("Ce n'est pas un message de Gideon.", ephemeral=True)
+            await ctx.respond("Ce n'est pas un message de Rosalie.", ephemeral=True)
             return
         _, entry = self.bot.memory.before(message.channel.id, message.id)
         original = entry.content if entry else message.content

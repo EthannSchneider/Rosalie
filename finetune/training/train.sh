@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Fine-tune la personnalité de Gideon sur Apple Silicon (mlx-lm), puis l'importe dans Ollama.
+# Fine-tune la personnalité de Rosalie sur Apple Silicon (mlx-lm), puis l'importe dans Ollama.
 #
 #   ./finetune/training/train.sh             # dataset -> LoRA -> fusion
 #   ./finetune/training/train.sh --no-train  # refait seulement la fusion
 #
-# Variables : OLLAMA_NAME (gideon), OLLAMA_BASE (qwen3:8b, pour récupérer le template
+# Variables : OLLAMA_NAME (rosalie), OLLAMA_BASE (qwen3:8b, pour récupérer le template
 # du chat + outils), MLX_MODEL (sinon celui de lora_config.yaml), ITERS.
 set -euo pipefail
 
@@ -19,7 +19,7 @@ ROOT="$(pwd)"
 VENV="$ROOT/finetune/.venv"
 CONFIG_MODEL="$(grep '^model:' finetune/training/lora_config.yaml | sed -E 's/model: *"?([^"]*)"?/\1/')"
 MLX_MODEL="${MLX_MODEL:-$CONFIG_MODEL}"
-OLLAMA_NAME="${OLLAMA_NAME:-gideon}"
+OLLAMA_NAME="${OLLAMA_NAME:-rosalie}"
 OLLAMA_BASE="${OLLAMA_BASE:-qwen3:8b}"
 
 if [ ! -x "$VENV/bin/mlx_lm.lora" ]; then

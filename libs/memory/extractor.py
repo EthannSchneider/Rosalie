@@ -5,7 +5,7 @@ from libs.llm.ollama import OllamaClient, OllamaError
 from libs.log import Log
 from libs.memory.long_term import LongTermMemory
 
-PROMPT = """Tu extrais des souvenirs durables d'une conversation entre {speaker} et Gideon (une IA).
+PROMPT = """Tu extrais des souvenirs durables d'une conversation entre {speaker} et Rosalie (une IA).
 
 Garde UNIQUEMENT les informations utiles des semaines plus tard :
 faits sur {speaker} ou ses proches (noms, animaux, dates, lieux, travail), préférences, projets,
@@ -51,7 +51,7 @@ async def extract_memories(llm: OllamaClient, model: str, long_term: LongTermMem
         raw = await llm.chat(
             [{"role": "system", "content": PROMPT.format(
                 today=_today(), speaker=speaker, known="\n".join(m.content for m in known) or "(rien)")},
-             {"role": "user", "content": f"{speaker}: {user_text}\nGideon: {reply}"}],
+             {"role": "user", "content": f"{speaker}: {user_text}\nRosalie: {reply}"}],
             model=model, format=SCHEMA, options={"temperature": 0, "num_predict": 300})
         items = json.loads(raw).get("memories", [])
     except (OllamaError, json.JSONDecodeError, AttributeError) as error:

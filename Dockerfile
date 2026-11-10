@@ -14,8 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
     STORAGE_DIR=/app/storages \
     LOG_FILE=/app/storages/log.txt \
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-RUN groupadd --gid 10001 gideon \
-    && useradd --uid 10001 --gid gideon --no-create-home gideon
+RUN groupadd --gid 10001 rosalie \
+    && useradd --uid 10001 --gid rosalie --no-create-home rosalie
 WORKDIR /app
 COPY --from=dependencies /opt/venv /opt/venv
 # Navigateur virtuel (Chromium headless) + ses bibliothèques système, pour les sites en JavaScript
@@ -30,7 +30,7 @@ COPY libs/ libs/
 COPY personas/ personas/
 COPY tests/ tests/
 RUN mkdir -p storages \
-    && chown -R gideon:gideon storages
-USER gideon
+    && chown -R rosalie:rosalie storages
+USER rosalie
 ENTRYPOINT ["python3", "bot.py"]
-CMD ["gideon"]
+CMD ["rosalie"]

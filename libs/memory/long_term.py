@@ -30,7 +30,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 class LongTermMemory:
-    """Mémoire à long terme de Gideon : des notes en SQLite + recherche sémantique.
+    """Mémoire à long terme de Rosalie : des notes en SQLite + recherche sémantique.
 
     - les souvenirs importants (importance >= 4) sont toujours dans son prompt
     - à chaque message, les souvenirs proches du sujet sont injectés automatiquement

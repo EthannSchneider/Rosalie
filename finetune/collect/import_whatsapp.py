@@ -6,7 +6,7 @@
 Dans WhatsApp : ouvrir la discussion > nom du contact > Exporter la discussion > Sans médias,
 puis déposer le .zip (ou le _chat.txt) dans finetune/data/raw/whatsapp/.
 
---assistant : les messages de qui deviennent les réponses de Gideon
+--assistant : les messages de qui deviennent les réponses de Rosalie
               (« them » = l'autre personne, « me » = toi, « both » = les deux points de vue).
 --me        : ton nom tel qu'il apparaît dans les exports. Par défaut, la personne présente
               dans tous les exports (toi), s'il y en a plusieurs.

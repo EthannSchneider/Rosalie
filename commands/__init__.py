@@ -7,7 +7,7 @@ from libs.log import Log
 
 
 COMMANDS = {
-    "gideon": "gideon",        # lance le bot Discord
+    "rosalie": "rosalie",        # lance le bot Discord
     "pull": "pull",            # télécharge le modèle Ollama configuré
     "test": "test",            # lance les tests unitaires
 }
@@ -16,7 +16,7 @@ COMMANDS = {
 def main():
     load_dotenv()
 
-    command_name = sys.argv[1] if len(sys.argv) > 1 else "gideon"
+    command_name = sys.argv[1] if len(sys.argv) > 1 else "rosalie"
     module_name = COMMANDS.get(command_name)
     if module_name is None:
         Log.error(f"Subcommand '{command_name}' not found. "

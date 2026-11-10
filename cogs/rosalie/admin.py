@@ -14,9 +14,9 @@ async def _model_autocomplete(ctx: discord.AutocompleteContext) -> list[str]:
 
 
 class Admin(discord.Cog):
-    """Commandes /gideon, réservées aux owners."""
+    """Commandes /rosalie, réservées aux owners."""
 
-    gideon = discord.SlashCommandGroup("gideon", "Contrôler Gideon")
+    rosalie = discord.SlashCommandGroup("rosalie", "Contrôler Rosalie")
 
     def __init__(self, bot: discord.Bot):
         self.__bot = bot
@@ -30,7 +30,7 @@ class Admin(discord.Cog):
         else:
             raise error
 
-    @gideon.command(name="status", description="État du modèle, de la mémoire et de la conversation")
+    @rosalie.command(name="status", description="État du modèle, de la mémoire et de la conversation")
     async def status(self, ctx: discord.ApplicationContext):
         bot = self.__bot
         try:
@@ -42,7 +42,7 @@ class Admin(discord.Cog):
         except OllamaError as error:
             ollama = f"❌ {error}"
         channel_id = ctx.channel.id
-        embed = discord.Embed(title="Gideon", color=discord.Color.blurple())
+        embed = discord.Embed(title="Rosalie", color=discord.Color.blurple())
         embed.add_field(name="Ollama", value=ollama, inline=False)
         embed.add_field(name="Modèle", value=f"`{bot.llm.model}`")
         embed.add_field(name="Salon dédié", value="oui" if bot.decider.is_dedicated(channel_id) else "non")
@@ -51,7 +51,7 @@ class Admin(discord.Cog):
         embed.add_field(name="Exemples d'entraînement", value=str(bot.dataset.count()))
         await ctx.respond(embed=embed, ephemeral=True)
 
-    @gideon.command(name="model", description="Changer le modèle Ollama utilisé")
+    @rosalie.command(name="model", description="Changer le modèle Ollama utilisé")
     async def model(self, ctx: discord.ApplicationContext,
                     name: discord.Option(str, "Nom du modèle Ollama", autocomplete=_model_autocomplete)):
         self.__bot.llm.model = name
@@ -59,30 +59,30 @@ class Admin(discord.Cog):
         Log.command(f"{ctx.author.name} switched model to {name}")
         await ctx.respond(f"Modèle changé pour `{name}`.", ephemeral=True)
 
-    @gideon.command(name="here", description="Activer/désactiver ce salon : elle y répond à tous tes messages")
+    @rosalie.command(name="here", description="Activer/désactiver ce salon : elle y répond à tous tes messages")
     async def here(self, ctx: discord.ApplicationContext):
         enabled = self.__bot.settings.toggle_channel(ctx.channel.id)
         await ctx.respond("Je répondrai à tous tes messages ici." if enabled
                           else "Ici, je ne répondrai que si tu m'appelles.", ephemeral=True)
 
-    @gideon.command(name="reset", description="Effacer l'historique de conversation de ce salon")
+    @rosalie.command(name="reset", description="Effacer l'historique de conversation de ce salon")
     async def reset(self, ctx: discord.ApplicationContext):
         self.__bot.memory.clear(ctx.channel.id)
         self.__bot.decider.stop(ctx.channel.id)
         await ctx.respond("Historique de ce salon effacé (mes souvenirs à long terme restent).",
                           ephemeral=True)
 
-    @gideon.command(name="stop", description="Mettre fin à la conversation en cours")
+    @rosalie.command(name="stop", description="Mettre fin à la conversation en cours")
     async def stop(self, ctx: discord.ApplicationContext):
         self.__bot.decider.stop(ctx.channel.id)
         await ctx.respond("D'accord, je me tais jusqu'à ce que tu m'appelles.", ephemeral=True)
 
-    @gideon.command(name="persona", description="Recharger le fichier de personnalité")
+    @rosalie.command(name="persona", description="Recharger le fichier de personnalité")
     async def persona(self, ctx: discord.ApplicationContext):
         text = self.__bot.persona.reload()
         await ctx.respond(f"Personnalité rechargée ({len(text)} caractères).", ephemeral=True)
 
-    @gideon.command(name="memories", description="Voir ses souvenirs à long terme")
+    @rosalie.command(name="memories", description="Voir ses souvenirs à long terme")
     async def memories(self, ctx: discord.ApplicationContext,
                        search: discord.Option(str, "Recherche (vide = les plus récents)",
                                               required=False, default=None)):
@@ -92,7 +92,7 @@ class Admin(discord.Cog):
         text = "\n".join(memory.line() for memory in memories) or "Aucun souvenir."
         await ctx.respond(text[:2000], ephemeral=True)
 
-    @gideon.command(name="forget", description="Effacer un souvenir par son numéro")
+    @rosalie.command(name="forget", description="Effacer un souvenir par son numéro")
     async def forget(self, ctx: discord.ApplicationContext,
                      memory_id: discord.Option(int, "Numéro du souvenir (#id)")):
         done = self.__bot.long_term.forget(memory_id)

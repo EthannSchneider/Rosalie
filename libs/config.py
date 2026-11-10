@@ -30,9 +30,9 @@ def _path(name: str, default: str) -> Path:
 
 @dataclass(frozen=True)
 class Config:
-    # Les seules personnes à qui Gideon obéit
+    # Les seules personnes à qui Rosalie obéit
     owner_ids: frozenset[int]
-    channel_ids: frozenset[int]        # salons où Gideon répond à tout
+    channel_ids: frozenset[int]        # salons où Rosalie répond à tout
     names: tuple[str, ...]             # noms qui la « réveillent » dans un message
     ignore_prefixes: tuple[str, ...]   # messages à ignorer
 
@@ -67,8 +67,8 @@ class Config:
         model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
         return cls(
             owner_ids=_ids("OWNER_IDS"),
-            channel_ids=_ids("GIDEON_CHANNEL_IDS"),
-            names=_list("GIDEON_NAMES", "gideon"),
+            channel_ids=_ids("ROSALIE_CHANNEL_IDS"),
+            names=_list("ROSALIE_NAMES", "rosalie"),
             ignore_prefixes=_list("IGNORE_PREFIXES", "//"),
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/"),
             ollama_model=model,
@@ -86,6 +86,6 @@ class Config:
             searxng_url=os.getenv("SEARXNG_URL", ""),
             brave_api_key=os.getenv("BRAVE_API_KEY", ""),
             web_browser=os.getenv("WEB_BROWSER", "auto").lower(),
-            persona_file=_path("PERSONA_FILE", "personas/gideon.md"),
+            persona_file=_path("PERSONA_FILE", "personas/rosalie.md"),
             storage_dir=_path("STORAGE_DIR", "storages"),
         )

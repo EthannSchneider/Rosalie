@@ -5,7 +5,7 @@
 
 Sources :
   finetune/data/samples/*.jsonl          conversations converties (finetune/collect/)
-  storages/dataset/samples.jsonl         exemples ⭐ / « Corriger (Gideon) » collectés par le bot
+  storages/dataset/samples.jsonl         exemples ⭐ / « Corriger (Rosalie) » collectés par le bot
 
 Résultat : finetune/data/mlx/{train,valid}.jsonl
 """
@@ -50,7 +50,7 @@ def main():
 
     sources = sorted(SAMPLES_DIR.glob("*.jsonl")) + [config.storage_dir / "dataset" / "samples.jsonl"]
     # Les exemples sans prompt système (conversations importées) reçoivent le persona actuel
-    system = build_system_prompt(Persona(config.persona_file).text, "Gideon", "en message privé")
+    system = build_system_prompt(Persona(config.persona_file).text, "Rosalie", "en message privé")
 
     samples = []
     for path in sources:

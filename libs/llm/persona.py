@@ -3,7 +3,7 @@ from pathlib import Path
 from libs.log import Log
 
 
-DEFAULT_PERSONA = "Tu es Gideon, une IA qui joue un personnage sur Discord. Reste en personnage."
+DEFAULT_PERSONA = "Tu es Rosalie, l'assistante personnelle de ton créateur sur Discord."
 
 
 class Persona:

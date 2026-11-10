@@ -15,7 +15,7 @@ from libs.utils.discord_utils import message_text, place_name, split_message
 
 
 class Chat(discord.Cog):
-    """Écoute les messages des owners, fait agir Gideon et répond."""
+    """Écoute les messages des owners, fait agir Rosalie et répond."""
 
     def __init__(self, bot: discord.Bot):
         self.__bot = bot

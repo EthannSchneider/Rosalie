@@ -31,7 +31,7 @@ JUDGE_PROMPT = (
 
 
 class ReplyDecider:
-    """Décide si Gideon doit répondre à un message.
+    """Décide si Rosalie doit répondre à un message.
 
     Ordre des règles (de la moins chère à la plus chère) :
       1. filtres durs : bots, tout le monde sauf OWNER_IDS, préfixes ignorés
@@ -88,7 +88,7 @@ class ReplyDecider:
         replied_to = await self.__replied_author(message)
         if replied_to is not None:
             if replied_to == bot_user.id:
-                return Decision(True, "reply to Gideon", record=True)
+                return Decision(True, "reply to Rosalie", record=True)
             return Decision(False, "reply to someone else", record=self.is_dedicated(channel_id))
 
         talks_to_someone_else = any(

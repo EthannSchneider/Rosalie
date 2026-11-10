@@ -6,7 +6,7 @@
     python finetune/collect/export_discord.py <channel_id> --assistant them --before 1562918208212697222
     python finetune/collect/export_discord.py <channel_id> --assistant them --convert-only
 
---assistant : les messages de qui deviennent les réponses de Gideon
+--assistant : les messages de qui deviennent les réponses de Rosalie
               (« them » = l'autre personne, « me » = toi, « both » = les deux points de vue :
               deux fois plus d'exemples, mais un style mélangé).
 
@@ -121,7 +121,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("channel_id")
     parser.add_argument("--assistant", choices=("me", "them", "both"), required=True,
-                        help="les messages de qui deviennent les réponses de Gideon")
+                        help="les messages de qui deviennent les réponses de Rosalie")
     parser.add_argument("--before", help="id d'un message : commencer à partir des messages plus anciens")
     parser.add_argument("--convert-only", action="store_true",
                         help="ne télécharge rien, reconvertit messages.txt")

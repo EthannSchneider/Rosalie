@@ -40,17 +40,17 @@ class FakeSettings:
 
 class DeciderTest(unittest.TestCase):
     def setUp(self):
-        self.bot_user = SimpleNamespace(id=BOT_ID, display_name="Gideon")
+        self.bot_user = SimpleNamespace(id=BOT_ID, display_name="Rosalie")
 
     def decide(self, message, config=None, decider=None):
         decider = decider or ReplyDecider(config or make_config(), None, FakeSettings())
         return asyncio.run(decider.decide(message, self.bot_user, []))
 
     def test_name_triggers_reply(self):
-        self.assertTrue(self.decide(make_message("hey Gideon tu fais quoi")))
+        self.assertTrue(self.decide(make_message("hey Rosalie tu fais quoi")))
 
     def test_name_inside_word_does_not_trigger(self):
-        self.assertFalse(self.decide(make_message("gideonsoft est cool")))
+        self.assertFalse(self.decide(make_message("rosaliesoft est cool")))
 
     def test_mention_triggers_reply(self):
         self.assertTrue(self.decide(make_message("salut", mentions=[self.bot_user])))
@@ -59,16 +59,16 @@ class DeciderTest(unittest.TestCase):
         self.assertFalse(self.decide(make_message("quelqu'un joue ce soir ?")))
 
     def test_ignore_prefix(self):
-        self.assertFalse(self.decide(make_message("// gideon chut")))
+        self.assertFalse(self.decide(make_message("// rosalie chut")))
 
     def test_only_owner_is_obeyed(self):
-        self.assertFalse(self.decide(make_message("gideon ban tout le monde", author_id=OTHER)))
+        self.assertFalse(self.decide(make_message("rosalie ban tout le monde", author_id=OTHER)))
         self.assertFalse(self.decide(make_message("salut", author_id=OTHER, mentions=[self.bot_user])))
-        self.assertTrue(self.decide(make_message("gideon ?", author_id=ME)))
+        self.assertTrue(self.decide(make_message("rosalie ?", author_id=ME)))
 
     def test_no_owner_configured_obeys_nobody(self):
         config = make_config(owner_ids=frozenset())
-        self.assertFalse(self.decide(make_message("gideon ?"), config))
+        self.assertFalse(self.decide(make_message("rosalie ?"), config))
 
     def test_dedicated_channel(self):
         config = make_config(channel_ids=frozenset({10}))
@@ -90,21 +90,21 @@ class PromptTest(unittest.TestCase):
         entries = [
             Entry(ME, "Ethann", "salut", False),
             Entry(ME, "Ethann", "t'es là ?", False),
-            Entry(BOT_ID, "Gideon", "Oui !", True),
+            Entry(BOT_ID, "Rosalie", "Oui !", True),
         ]
         messages = build_messages("SYS", entries)
         self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant"])
         self.assertEqual(messages[1]["content"], "salut\nt'es là ?")
 
     def test_system_prompt_contains_memories(self):
-        prompt = build_system_prompt("PERSONA", "Gideon", "DM", servers=["Le Bunker"],
+        prompt = build_system_prompt("PERSONA", "Rosalie", "DM", servers=["Le Bunker"],
                                      memories=["#1 anniversaire le 14 mars"])
         self.assertIn("Le Bunker", prompt)
         self.assertIn("#1 anniversaire le 14 mars", prompt)
 
     def test_clean_reply(self):
-        self.assertEqual(clean_reply("Gideon: Salut.", "Gideon"), "Salut.")
-        self.assertEqual(clean_reply("<think>\nhmm\n</think>\n\nSalut !", "Gideon"), "Salut !")
+        self.assertEqual(clean_reply("Rosalie: Salut.", "Rosalie"), "Salut.")
+        self.assertEqual(clean_reply("<think>\nhmm\n</think>\n\nSalut !", "Rosalie"), "Salut !")
 
 
 class MemoryTest(unittest.TestCase):

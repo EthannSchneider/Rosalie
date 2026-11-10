@@ -7,14 +7,14 @@
 #
 # Sur un serveur Linux sans Ollama installé : active le profil « ollama »
 #   OLLAMA_URL=http://ollama:11434 docker compose -f deploy/docker/compose.yml --profile ollama up -d --build
-name: gideon
+name: rosalie
 
 services:
-  gideon:
+  rosalie:
     build:
       context: ../..
       dockerfile: Dockerfile
-    image: gideon:latest
+    image: rosalie:latest
     env_file:
       - ../../.env
     environment:
@@ -24,10 +24,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - gideon-data:/app/storages
-      # Modifier le personnage sans rebuild, puis /gideon persona sur Discord
+      - rosalie-data:/app/storages
+      # Modifier le personnage sans rebuild, puis /rosalie persona sur Discord
       - ../../personas:/app/personas:ro
-    command: ["gideon"]
+    command: ["rosalie"]
     init: true
     restart: unless-stopped
     security_opt:
@@ -53,5 +53,5 @@ services:
     #           capabilities: [gpu]
 
 volumes:
-  gideon-data:
+  rosalie-data:
   ollama-models:

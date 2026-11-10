@@ -2,4 +2,4 @@ from commands._bot import run_bot
 
 
 def run():
-    run_bot("gideon")
+    run_bot("rosalie")

@@ -1,4 +1,4 @@
-# Fine-tuning de Gideon
+# Fine-tuning de Rosalie
 
 Tout ce qui sert à entraîner sa personnalité vit ici, séparé du bot : récupération des
 conversations, conversion, construction du dataset et entraînement. Rien de ce dossier
@@ -46,7 +46,7 @@ dépose les `.zip` dans `finetune/data/raw/whatsapp/`, puis :
 python finetune/collect/import_whatsapp.py --assistant them|me|both [--me "Ton Nom"]
 ```
 
-`--assistant` choisit les messages de qui deviennent les réponses de Gideon :
+`--assistant` choisit les messages de qui deviennent les réponses de Rosalie :
 `them` (l'autre personne), `me` (toi) ou `both` (les deux, style mélangé). Les messages
 des autres personnes demandent leur accord.
 
@@ -60,7 +60,7 @@ conversation.
 python finetune/dataset/build.py
 ```
 
-Assemble `data/samples/*.jsonl` et les exemples ⭐ / « Corriger (Gideon) » collectés par
+Assemble `data/samples/*.jsonl` et les exemples ⭐ / « Corriger (Rosalie) » collectés par
 le bot (`storages/dataset/samples.jsonl`), ajoute le persona comme prompt système, et
 écrit `data/mlx/train.jsonl` / `valid.jsonl`.
 

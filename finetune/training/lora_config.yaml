@@ -7,7 +7,7 @@ fine_tune_type: lora
 data: "finetune/data/mlx"
 adapter_path: "finetune/output/adapters"
 
-# On n'apprend que la réponse finale de Gideon, pas les messages d'Ethann
+# On n'apprend que la réponse finale de Rosalie, pas les messages d'Ethann
 mask_prompt: true
 
 batch_size: 1

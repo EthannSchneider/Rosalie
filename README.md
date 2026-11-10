@@ -1,6 +1,6 @@
-# Gideon
+# Rosalie
 
-Gideon est l'assistante Discord personnelle de son créateur : elle discute avec une vraie
+Rosalie est l'assistante Discord personnelle de son créateur : elle discute avec une vraie
 personnalité (émotions, envies, avis), **exécute des actions sur Discord** quand tu lui
 demandes, et **se souvient** de ce qui compte. Elle tourne en local avec Ollama et
 n'obéit qu'aux `OWNER_IDS`.
@@ -11,14 +11,14 @@ n'obéit qu'aux `OWNER_IDS`.
 bot.py                       point d'entrée : python bot.py <commande>
 commands/                    sous-commandes CLI (comme Compagnie Hydromel)
   _bot.py                    création du discord.Bot + services + chargement des cogs
-  gideon.py                  python bot.py gideon   → lance le bot
+  rosalie.py                  python bot.py rosalie   → lance le bot
   pull.py                    python bot.py pull     → télécharge un modèle Ollama
   test.py                    python bot.py test     → tests unitaires
 cogs/
   reload.py                  /reload
-  gideon/chat.py             écoute, fait agir l'agent, répond, prend des notes
-  gideon/admin.py            /gideon status|model|here|reset|stop|persona|memories|forget
-  gideon/training.py         ⭐ et « Corriger (Gideon) » → exemples de fine-tuning
+  rosalie/chat.py             écoute, fait agir l'agent, répond, prend des notes
+  rosalie/admin.py            /rosalie status|model|here|reset|stop|persona|memories|forget
+  rosalie/training.py         ⭐ et « Corriger (Rosalie) » → exemples de fine-tuning
 libs/
   assistant/agent.py         boucle LLM ⇄ outils
   assistant/tools.py         les actions Discord + mémoire (ajoute les tiennes ici)
@@ -32,7 +32,7 @@ libs/
   conversation/memory.py     historique court terme par salon
   conversation/prompt.py     prompt système (persona + contexte + souvenirs)
   llm/ollama.py              client async Ollama (chat, outils, embeddings)
-personas/gideon.md           sa personnalité (à modifier librement, /gideon persona)
+personas/rosalie.md           sa personnalité (à modifier librement, /rosalie persona)
 finetune/                    fine-tuning, séparé du bot (voir finetune/README.md)
 ```
 
@@ -68,9 +68,9 @@ async def pin_message(ctx: ToolContext, message_id: str) -> str:
 
 1. **Jamais** à quelqu'un d'autre que `OWNER_IDS`, ni aux messages commençant par `//`.
 2. **Toujours** : en DM, @mention, réponse à un de ses messages, son nom dans le message.
-3. **Salon dédié** (`/gideon here`) : à tous tes messages.
+3. **Salon dédié** (`/rosalie here`) : à tous tes messages.
 4. **Conversation en cours** : pendant `CONVERSATION_TIMEOUT` s, elle te suit sans être nommée ;
-   un petit appel LLM OUI/NON tranche les cas ambigus. `/gideon stop` pour couper.
+   un petit appel LLM OUI/NON tranche les cas ambigus. `/rosalie stop` pour couper.
 
 ## Mémoire
 
@@ -81,12 +81,12 @@ async def pin_message(ctx: ToolContext, message_id: str) -> str:
   - elle peut aussi noter / chercher / oublier elle-même (`remember`, `recall`, `forget`) ;
   - à chaque message, les souvenirs liés au sujet + les plus importants sont mis dans son
     prompt ; si rien n'est trouvé, on lui dit de ne pas inventer.
-  - `/gideon memories [recherche]` pour les voir, `/gideon forget <id>` pour en effacer un.
+  - `/rosalie memories [recherche]` pour les voir, `/rosalie forget <id>` pour en effacer un.
 
 ## Installation
 
 1. Developer Portal → Bot : active **Message Content Intent** et **Server Members Intent**.
-2. `cp .env.example .env` → `GIDEON_TOKEN`, `OWNER_IDS`.
+2. `cp .env.example .env` → `ROSALIE_TOKEN`, `OWNER_IDS`.
 3. Modèles : `ollama pull qwen3:8b && ollama pull nomic-embed-text`
 
 ```bash
@@ -110,5 +110,5 @@ discute sans outil quand il faut et agit correctement quand on lui demande.
 Tout est dans [`finetune/`](finetune/README.md), séparé du bot : récupération de
 conversations Discord / WhatsApp, conversion, dataset, entraînement. Côté bot, il ne reste
 que la collecte d'exemples pendant que tu discutes avec elle : ⭐ sur ses bonnes réponses,
-clic droit → Applications → **Corriger (Gideon)** sur les ratées (seules les réponses de
+clic droit → Applications → **Corriger (Rosalie)** sur les ratées (seules les réponses de
 discussion sont gardées, pas celles liées à une action).

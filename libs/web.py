@@ -1,4 +1,4 @@
-"""Accès internet de Gideon : recherche web et lecture de pages.
+"""Accès internet de Rosalie : recherche web et lecture de pages.
 Les pages construites en JavaScript sont lues avec le navigateur virtuel (libs/browser.py).
 
 Recherche : DuckDuckGo (par défaut, sans clé), SearXNG (SEARXNG_URL) ou Brave (BRAVE_API_KEY).
