@@ -1,0 +1,57 @@
+# Depuis la racine du repo :
+#   docker compose -f deploy/docker/compose.yml up -d --build
+#
+# Sur Mac : Ollama tourne nativement sur l'hôte (Docker Desktop n'a pas accès au GPU
+# Metal, Ollama en conteneur serait 5-10x plus lent). Le bot le joint via
+# host.docker.internal.
+#
+# Sur un serveur Linux sans Ollama installé : active le profil « ollama »
+#   OLLAMA_URL=http://ollama:11434 docker compose -f deploy/docker/compose.yml --profile ollama up -d --build
+name: rosalie
+
+services:
+  rosalie:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: rosalie:latest
+    env_file:
+      - ../../.env
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      STORAGE_DIR: /app/storages
+      LOG_FILE: /app/storages/log.txt
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - rosalie-data:/app/storages
+      # Modifier le personnage sans rebuild, puis /rosalie persona sur Discord
+      - ../../personas:/app/personas:ro
+    command: ["rosalie"]
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+    restart: unless-stopped
+    # GPU NVIDIA : décommenter
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  rosalie-data:
+  ollama-models:
