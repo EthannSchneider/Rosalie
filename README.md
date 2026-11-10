@@ -1,86 +1,106 @@
 # Gideon
-Gideon is a discord Bot for personnal use <br>
-He can play music (with youtube) <br>
-tell you joke and many other thing <br>
-!help ;)
 
-## Table of Contents
+Gideon est l'assistante Discord personnelle de son créateur : elle discute avec une vraie
+personnalité (émotions, envies, avis), **exécute des actions sur Discord** quand tu lui
+demandes, et **se souvient** de ce qui compte. Elle tourne en local avec Ollama et
+n'obéit qu'aux `OWNER_IDS`.
 
-- [Gideon](#gideon)
-	- [Table of Contents](#table-of-contents)
-	- [Link](#link)
-	- [Commands](#commands)
-		- [!help](#help)
-		- [!salut](#salut)
-		- [!pileFace](#pileface)
-		- [!play](#play)
-		- [!skip](#skip)
-		- [!stop](#stop)
-		- [!pi](#pi)
-		- [!joke](#joke)
-		- [!sel](#sel)
-		- [!disquette](#disquette)
+## Architecture
 
-  - [Version](#version)
-    - [Date](#date)
+```
+bot.py                       point d'entrée : python bot.py <commande>
+commands/                    sous-commandes CLI (comme Compagnie Hydromel)
+  _bot.py                    création du discord.Bot + services + chargement des cogs
+  gideon.py                  python bot.py gideon   → lance le bot
+  pull.py                    python bot.py pull     → télécharge un modèle Ollama
+  dataset.py                 python bot.py dataset  → construit finetune/data/*.jsonl
+  test.py                    python bot.py test     → tests unitaires
+cogs/
+  reload.py                  /reload
+  gideon/chat.py             écoute, fait agir l'agent, répond, prend des notes
+  gideon/admin.py            /gideon status|model|here|reset|stop|persona|memories|forget
+  gideon/training.py         ⭐ et « Corriger (Gideon) » → exemples de fine-tuning
+libs/
+  assistant/agent.py         boucle LLM ⇄ outils
+  assistant/tools.py         les actions Discord + mémoire (ajoute les tiennes ici)
+  assistant/resolver.py      « Le bunker » / #salon / @membre → objets Discord
+  assistant/confirm.py       boutons Confirmer/Annuler pour les actions dangereuses
+  memory/long_term.py        mémoire long terme (SQLite + embeddings)
+  memory/extractor.py        prise de notes automatique après chaque échange
+  conversation/decider.py    « dois-je répondre ? »
+  conversation/memory.py     historique court terme par salon
+  conversation/prompt.py     prompt système (persona + contexte + souvenirs)
+  llm/ollama.py              client async Ollama (chat, outils, embeddings)
+personas/gideon.md           sa personnalité (à modifier librement, /gideon persona)
+finetune/                    entraînement de la personnalité (mlx-lm)
+```
 
-## Link
-https://discord.com/oauth2/authorize?client_id=677983998504468523&scope=bot&permissions=9 <br>
-To made Gideon join your discord
+## Ce qu'elle sait faire
 
-## Commands
-### !help
-Simple Help page
+Envoyer un message (dans un salon, ou sur un serveur par son nom), envoyer un MP, lire un
+salon, créer/supprimer un salon, purger des messages, donner/retirer un rôle,
+expulser/bannir, changer son statut. Les actions destructrices (suppression, purge,
+kick, ban) demandent une **confirmation par bouton**.
 
-<img src="READMEfile/Help.png" alt="helpExemple" width="200"/>
+Ajouter une action = une fonction dans `libs/assistant/tools.py` :
 
-### !salut
-Say hello
+```python
+@tool("pin_message", "Épingle un message.",
+      {"message_id": ("string", "Id du message")}, required=("message_id",))
+async def pin_message(ctx: ToolContext, message_id: str) -> str:
+    message = await ctx.channel.fetch_message(int(message_id))
+    await message.pin()
+    return "Message épinglé."
+```
 
-<img src="READMEfile/salut.png" alt="salut" width="250"/>
+## Quand répond-elle ?
 
-### !pileFace
-Simple Pile Ou Face (heads or tails)
+1. **Jamais** à quelqu'un d'autre que `OWNER_IDS`, ni aux messages commençant par `//`.
+2. **Toujours** : en DM, @mention, réponse à un de ses messages, son nom dans le message.
+3. **Salon dédié** (`/gideon here`) : à tous tes messages.
+4. **Conversation en cours** : pendant `CONVERSATION_TIMEOUT` s, elle te suit sans être nommée ;
+   un petit appel LLM OUI/NON tranche les cas ambigus. `/gideon stop` pour couper.
 
-<img src="READMEfile/pileFace.png" alt="pileFace" width="400"/>
+## Mémoire
 
-### !play
-play Music
+- **Court terme** : les `HISTORY_SIZE` derniers messages de chaque salon.
+- **Long terme** (`storages/long_term.sqlite3`) :
+  - après chaque échange, un appel en arrière-plan note les faits durables
+    (« Le chat d'Ethann s'appelle Minou », dates converties en vraies dates) ;
+  - elle peut aussi noter / chercher / oublier elle-même (`remember`, `recall`, `forget`) ;
+  - à chaque message, les souvenirs liés au sujet + les plus importants sont mis dans son
+    prompt ; si rien n'est trouvé, on lui dit de ne pas inventer.
+  - `/gideon memories [recherche]` pour les voir, `/gideon forget <id>` pour en effacer un.
 
-<img src="READMEfile/play.png" alt="play" width="400"/>
+## Installation
 
-### !skip
-skip Music
+1. Developer Portal → Bot : active **Message Content Intent** et **Server Members Intent**.
+2. `cp .env.example .env` → `GIDEON_TOKEN`, `OWNER_IDS`.
+3. Modèles : `ollama pull qwen3:8b && ollama pull nomic-embed-text`
 
-<img src="READMEfile/skip.png" alt="skip" width="200"/>
+```bash
+python3 -m venv env && source env/bin/activate
+pip install -r requirements.txt
+python bot.py
+```
 
-### !stop
-stop Music
+Docker : `docker compose -f deploy/docker/compose.yml up -d --build`
+(sur Mac, Ollama reste natif pour le GPU ; le conteneur le joint via `host.docker.internal`).
 
-<img src="READMEfile/stop.png" alt="stop" width="200"/>
+### Pourquoi qwen3:8b
 
-### !pi
-tell you pi Number
+Testé sur les mêmes demandes : **llama3.1:8b** appelle un outil pour tout (« Hello » →
+envoie un message, « comment tu te sens » → change son statut). **qwen3:8b** (5,2 Go)
+discute sans outil quand il faut et agit correctement quand on lui demande.
 
-<img src="READMEfile/pi.png" alt="pi" width="400"/>
+## Fine-tuning de la personnalité
 
-### !joke
-tell you a joke
-
-<img src="READMEfile/joke.png" alt="joke" width="400"/>
-
-### !sel
-Give you salt picture
-
-<img src="READMEfile/sel.png" alt="sel" width="400"/>
-
-### !disquette
-Give you disquette
-
-<img src="READMEfile/disquette.png" alt="disquette" width="300"/>
-
-
-## Version
-2.4.3
-### Date
-10 May 2022
+1. **Collecter** : ⭐ sur ses bonnes réponses, clic droit → Applications →
+   **Corriger (Gideon)** sur les ratées. Seules les réponses de discussion sont gardées
+   (pas celles liées à une action, sinon elle apprendrait à prétendre agir sans outil).
+   Exemples écrits à la main : `finetune/seed.jsonl`. Vise 200+ (`/gideon status`).
+2. **Entraîner** : `./finetune/train.sh` (QLoRA Qwen3-8B 4 bits, ~10 Go de RAM).
+3. **Importer dans Ollama : en attente.** Ollama 0.40 ne charge plus les adaptateurs LoRA, et
+   l'import direct du modèle fusionné ne garde pas le bon template (la réflexion fuit, plus
+   d'outils). La solution fiable : convertir en GGUF avec llama.cpp puis réutiliser le
+   template de `qwen3:8b`.

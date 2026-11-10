@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.13-slim-bookworm AS dependencies
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+COPY requirements.txt /build/requirements.txt
+RUN pip install -r /build/requirements.txt
+
+FROM python:3.13-slim-bookworm AS runtime
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    STORAGE_DIR=/app/storages \
+    LOG_FILE=/app/storages/log.txt
+RUN groupadd --gid 10001 gideon \
+    && useradd --uid 10001 --gid gideon --no-create-home gideon
+WORKDIR /app
+COPY --from=dependencies /opt/venv /opt/venv
+COPY bot.py requirements.txt ./
+COPY commands/ commands/
+COPY cogs/ cogs/
+COPY libs/ libs/
+COPY personas/ personas/
+COPY finetune/seed.jsonl finetune/seed.jsonl
+COPY tests/ tests/
+RUN mkdir -p storages finetune/data \
+    && chown -R gideon:gideon storages finetune
+USER gideon
+ENTRYPOINT ["python3", "bot.py"]
+CMD ["gideon"]
