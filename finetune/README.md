@@ -16,6 +16,7 @@ finetune/
     build.py                    assemble le dataset final train / valid
   training/                   3. entraîner
     train.sh                    entraînement LoRA (mlx-lm) + fusion
+    export_ollama.sh            conversion GGUF + import dans Ollama
     lora_config.yaml            réglages de l'entraînement
   tests/                      tests de ce dossier
   data/                       ⚠️ privé, ignoré par git
@@ -24,6 +25,7 @@ finetune/
     samples/*.jsonl                 exemples convertis, un fichier par conversation
     mlx/{train,valid}.jsonl         dataset final pour mlx-lm
   output/                     ⚠️ ignoré par git : adapters LoRA et modèle fusionné
+  tools/llama.cpp/            ignoré par git : outils de conversion GGUF
 ```
 
 ## 1. Récupérer des conversations
@@ -74,9 +76,21 @@ QLoRA sur Qwen3-8B en 4 bits (~10 Go de RAM, ferme Ollama). Réglages dans
 `training/lora_config.yaml` : avec `iters: 600`, seuls ~600 exemples sont vus ; une passe complète
 sur un gros dataset prend plusieurs heures.
 
-**Import dans Ollama : en attente.** Ollama 0.40 ne charge plus les adaptateurs LoRA et
-l'import direct du modèle fusionné perd le template (réflexion qui fuit, plus d'outils).
-La voie fiable : conversion GGUF avec llama.cpp + template de `qwen3:8b`.
+### Import dans Ollama (local)
+
+```bash
+./finetune/training/export_ollama.sh
+```
+
+Télécharge et compile llama.cpp dans `finetune/tools/` (une seule fois), convertit le modèle
+fusionné en GGUF, le compresse en Q4_K_M (~5 Go, comme `qwen3:8b`) et crée le modèle `rosalie`
+dans Ollama avec le template de `qwen3:8b` (outils et réflexion on/off conservés).
+Il faut ~20 Go libres pendant la conversion. Ensuite, dans `.env` : `OLLAMA_MODEL=rosalie`
+(garder `DECIDER_MODEL=qwen3:8b` pour le tri des messages et les notes).
+`finetune/output/fused` peut être supprimé : `train.sh --no-train` le recrée depuis les adapters.
+
+Pourquoi pas plus simple : Ollama 0.40 ne charge plus les adaptateurs LoRA, et l'import direct
+des safetensors choisit un mauvais template (réflexion qui fuit, plus d'outils).
 
 ## Tests
 

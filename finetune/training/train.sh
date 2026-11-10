@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Fine-tune la personnalité de Rosalie sur Apple Silicon (mlx-lm), puis l'importe dans Ollama.
+# Fine-tune la personnalité de Rosalie sur Apple Silicon (mlx-lm). Import : export_ollama.sh.
 #
 #   ./finetune/training/train.sh             # dataset -> LoRA -> fusion
 #   ./finetune/training/train.sh --no-train  # refait seulement la fusion
 #
-# Variables : OLLAMA_NAME (rosalie), OLLAMA_BASE (qwen3:8b, pour récupérer le template
-# du chat + outils), MLX_MODEL (sinon celui de lora_config.yaml), ITERS.
+# Variables : MLX_MODEL (sinon celui de lora_config.yaml), ITERS.
 set -euo pipefail
 
 # mlx n'existe qu'en arm64 : si ce shell tourne sous Rosetta (bash Homebrew Intel),
@@ -20,8 +19,6 @@ VENV="$ROOT/finetune/.venv"
 # tr -d '\r' : ignore les fins de ligne Windows si le fichier en a (git core.autocrlf)
 CONFIG_MODEL="$(grep '^model:' finetune/training/lora_config.yaml | tr -d '\r' | sed -E 's/model: *"?([^"]*)"?/\1/')"
 MLX_MODEL="${MLX_MODEL:-$CONFIG_MODEL}"
-OLLAMA_NAME="${OLLAMA_NAME:-rosalie}"
-OLLAMA_BASE="${OLLAMA_BASE:-qwen3:8b}"
 
 if [ ! -x "$VENV/bin/mlx_lm.lora" ]; then
     echo "==> Création du venv de fine-tuning"
@@ -49,10 +46,6 @@ rm -rf finetune/output/fused
     --save-path finetune/output/fused \
     --dequantize
 
-# Import dans Ollama : EN ATTENTE.
-# Ollama 0.40 ne charge plus les adaptateurs LoRA, et l'import direct des safetensors
-# fusionnés choisit un renderer « qwen3-coder » (réflexion qui fuit, pas d'outils).
-# La voie fiable est une conversion GGUF (llama.cpp) + le template de qwen3:8b — voir README.
 echo
 echo "Entraînement et fusion OK : modèle fusionné dans finetune/output/fused."
-echo "L'import dans Ollama n'est pas encore branché (voir README, section Fine-tuning)."
+echo "Import dans Ollama : ./finetune/training/export_ollama.sh"

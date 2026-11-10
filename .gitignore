@@ -14,5 +14,6 @@ storages/*
 finetune/.venv/
 finetune/data/
 finetune/output/
+finetune/tools/
 
 **/__pycache__/

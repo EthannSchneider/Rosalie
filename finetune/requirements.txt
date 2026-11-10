@@ -1,3 +1,5 @@
 mlx-lm==0.32.2
 python-dotenv==1.2.4
+# conversion GGUF pour Ollama (export_ollama.sh ; gguf est installé depuis llama.cpp)
+torch==2.15.0
 # dataset.py réutilise le persona et la config du bot (libs/), sans dépendre de discord
