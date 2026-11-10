@@ -61,14 +61,26 @@ class DeciderTest(unittest.TestCase):
     def test_ignore_prefix(self):
         self.assertFalse(self.decide(make_message("// rosalie chut")))
 
-    def test_only_owner_is_obeyed(self):
-        self.assertFalse(self.decide(make_message("rosalie ban tout le monde", author_id=OTHER)))
-        self.assertFalse(self.decide(make_message("salut", author_id=OTHER, mentions=[self.bot_user])))
-        self.assertTrue(self.decide(make_message("rosalie ?", author_id=ME)))
+    def test_only_owner_when_public_replies_off(self):
+        config = make_config(public_replies=False)
+        self.assertFalse(self.decide(make_message("rosalie ?", author_id=OTHER), config))
+        self.assertTrue(self.decide(make_message("rosalie ?", author_id=ME), config))
+        self.assertFalse(self.decide(make_message("rosalie ?"), make_config(
+            owner_ids=frozenset(), public_replies=False)))
 
-    def test_no_owner_configured_obeys_nobody(self):
-        config = make_config(owner_ids=frozenset())
-        self.assertFalse(self.decide(make_message("rosalie ?"), config))
+    def test_guest_can_chat_with_cooldown(self):
+        decider = ReplyDecider(make_config(public_cooldown=60), None, FakeSettings())
+        self.assertFalse(self.decide(make_message("salut", author_id=OTHER), decider=decider))
+        self.assertTrue(self.decide(make_message("rosalie ?", author_id=OTHER), decider=decider))
+        self.assertFalse(self.decide(make_message("rosalie ??", author_id=OTHER), decider=decider))
+        self.assertTrue(self.decide(make_message("rosalie ?", author_id=ME), decider=decider))
+
+    def test_guest_prompt_has_no_memories_nor_actions(self):
+        prompt = build_system_prompt("PERSONA", "Rosalie", "DM", speaker="Sachiko",
+                                     memories=["Ethann habite à Lausanne"], guest=True)
+        self.assertIn("PAS ton créateur", prompt)
+        self.assertNotIn("Lausanne", prompt)
+        self.assertNotIn("send_message", prompt)
 
     def test_dedicated_channel(self):
         config = make_config(channel_ids=frozenset({10}))

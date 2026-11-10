@@ -42,7 +42,8 @@ class Log():
         import discord
 
         if isinstance(channel, discord.DMChannel):
-            channel_name = bot + " DM with " + author
+            recipient = channel.recipient.name if channel.recipient else author
+            channel_name = bot + " DM with " + recipient
         else:
             channel_name = getattr(channel, "name", str(channel))
         return Log("(" + channel_name + ") " + author + ": " + message, LogType.MESSAGE)

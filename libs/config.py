@@ -62,6 +62,10 @@ class Config:
     persona_file: Path
     storage_dir: Path
 
+    # Les autres personnes : simple discussion (aucun outil Discord, aucun souvenir)
+    public_replies: bool = True
+    public_cooldown: int = 5           # secondes minimum entre deux réponses à une même personne
+
     @classmethod
     def from_env(cls) -> "Config":
         model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
@@ -88,4 +92,6 @@ class Config:
             web_browser=os.getenv("WEB_BROWSER", "auto").lower(),
             persona_file=_path("PERSONA_FILE", "personas/rosalie.md"),
             storage_dir=_path("STORAGE_DIR", "storages"),
+            public_replies=_bool("PUBLIC_REPLIES", True),
+            public_cooldown=int(os.getenv("PUBLIC_COOLDOWN", "5")),
         )

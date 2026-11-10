@@ -23,6 +23,10 @@ class ToolContext:
     author: discord.abc.User
 
     @property
+    def is_owner(self) -> bool:
+        return self.author.id in self.bot.config.owner_ids
+
+    @property
     def guild(self) -> discord.Guild | None:
         return getattr(self.channel, "guild", None)
 
@@ -61,10 +65,13 @@ def tool(name: str, description: str, params: dict | None = None,
 
 
 WEB_TOOLS = {"web_search", "fetch_url"}
+# Seuls outils permis quand ce n'est pas un owner qui parle : chercher une info, rien d'autre
+GUEST_TOOLS = WEB_TOOLS
 
 
-def schemas(web_access: bool = True) -> list[dict]:
-    return [t.schema() for t in TOOLS.values() if web_access or t.name not in WEB_TOOLS]
+def schemas(web_access: bool = True, guest: bool = False) -> list[dict]:
+    return [t.schema() for t in TOOLS.values()
+            if (web_access or t.name not in WEB_TOOLS) and (not guest or t.name in GUEST_TOOLS)]
 
 
 async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> str:
@@ -72,6 +79,9 @@ async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> 
     selected = TOOLS.get(name)
     if selected is None:
         return f"Erreur : l'outil « {name} » n'existe pas."
+    if name not in GUEST_TOOLS and not ctx.is_owner:
+        Log.warning(f"Tool {name} refused for non-owner {ctx.author}")
+        return "Erreur : seul mon créateur peut me demander ça."
     if name in WEB_TOOLS and not getattr(ctx.bot.config, "web_access", True):
         return "Erreur : l'accès internet est désactivé (WEB_ACCESS=false)."
     if isinstance(arguments, str):

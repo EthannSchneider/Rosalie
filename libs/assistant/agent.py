@@ -43,7 +43,7 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
     """Boucle « le modèle appelle des outils -> on lui renvoie les résultats »
     jusqu'à ce qu'il produise une réponse finale en texte."""
     actions: list[str] = []
-    tools = schemas(getattr(ctx.bot.config, "web_access", True))
+    tools = schemas(getattr(ctx.bot.config, "web_access", True), guest=not ctx.is_owner)
     nudged = False
     for _ in range(max_steps):
         message = await llm.chat_message(messages, tools=tools)

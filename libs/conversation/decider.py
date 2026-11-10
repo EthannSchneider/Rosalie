@@ -34,7 +34,8 @@ class ReplyDecider:
     """Décide si Rosalie doit répondre à un message.
 
     Ordre des règles (de la moins chère à la plus chère) :
-      1. filtres durs : bots, tout le monde sauf OWNER_IDS, préfixes ignorés
+      1. filtres durs : bots, préfixes ignorés, non-owners si PUBLIC_REPLIES=false
+         (les non-owners ont droit à la discussion seulement, avec un délai anti-spam)
       2. signaux explicites : DM, @mention, réponse à un de ses messages, son nom
       3. salon dédié : répond à tout (sauf si on parle clairement à quelqu'un d'autre)
       4. conversation en cours avec cette personne (< CONVERSATION_TIMEOUT s) :
@@ -46,6 +47,7 @@ class ReplyDecider:
         self.__llm = llm
         self.__settings = settings
         self.__active: dict[tuple[int, int], float] = {}
+        self.__guest_replies: dict[int, float] = {}
         names = "|".join(re.escape(name) for name in config.names)
         self.__name_regex = re.compile(rf"(?<!\w)({names})(?!\w)", re.IGNORECASE)
 
@@ -65,15 +67,29 @@ class ReplyDecider:
         return channel_id in self.__config.channel_ids or channel_id in self.__settings.channel_ids
 
     # --- décision ----------------------------------------------------------
+    def is_owner(self, user_id: int) -> bool:
+        return user_id in self.__config.owner_ids
+
     async def decide(self, message: discord.Message, bot_user: discord.ClientUser,
                      history: list[Entry]) -> Decision:
+        decision = await self.__decide(message, bot_user, history)
+        if decision and not self.is_owner(message.author.id):
+            now = time.time()
+            last = self.__guest_replies.get(message.author.id, 0)
+            if now - last < self.__config.public_cooldown:
+                return Decision(False, "guest cooldown", record=decision.record)
+            self.__guest_replies[message.author.id] = now
+        return decision
+
+    async def __decide(self, message: discord.Message, bot_user: discord.ClientUser,
+                       history: list[Entry]) -> Decision:
         config = self.__config
         content = message.content.strip()
         channel_id = message.channel.id
 
         if message.author.bot:
             return Decision(False, "author is a bot")
-        if message.author.id not in config.owner_ids:
+        if not self.is_owner(message.author.id) and not config.public_replies:
             return Decision(False, "not an owner")
         if not content and not message.attachments:
             return Decision(False, "empty message")

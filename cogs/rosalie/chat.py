@@ -29,6 +29,8 @@ class Chat(discord.Cog):
             return
 
         channel_id = message.channel.id
+        Log.message(message.channel, message_text(message, bot.user), message.author.name,
+                    bot.user.name)
         history = bot.memory.get(channel_id)
         decision = await bot.decider.decide(message, bot.user, history)
 
@@ -41,9 +43,9 @@ class Chat(discord.Cog):
                 message_id=message.id,
             ))
         if not decision:
+            Log.info(f"Not replying to {message.author.name} ({decision.reason})")
             return
 
-        Log.message(message.channel, message.content, message.author.name, bot.user.name)
         Log.info(f"Replying to {message.author.name} ({decision.reason})")
 
         async with self.__locks[channel_id]:
@@ -61,6 +63,7 @@ class Chat(discord.Cog):
                 return
 
             sent = await self.__send(message, reply, reply_to=not bot.decider.is_dedicated(channel_id))
+            Log.message(message.channel, reply, bot.user.name, bot.user.name)
             bot.memory.add(channel_id, Entry(
                 author_id=bot.user.id,
                 author_name=bot.user.display_name,
@@ -71,6 +74,8 @@ class Chat(discord.Cog):
             ))
             bot.decider.mark_active(channel_id, message.author.id)
 
+        if not bot.decider.is_owner(message.author.id):
+            return   # on ne prend des notes que sur les owners
         # Prise de notes automatique, sans bloquer la conversation
         task = asyncio.create_task(extract_memories(
             bot.llm, bot.config.decider_model, bot.long_term,
@@ -82,7 +87,8 @@ class Chat(discord.Cog):
         bot = self.__bot
         entries = bot.memory.get(message.channel.id)
         system = await self.system_prompt(message.channel, query=message.content,
-                                          speaker=message.author.display_name)
+                                          speaker=message.author.display_name,
+                                          guest=not bot.decider.is_owner(message.author.id))
         ctx = ToolContext(bot=bot, channel=message.channel, author=message.author)
         result = await run_agent(bot.llm, build_messages(system, entries), ctx,
                                  max_steps=bot.config.max_tool_steps)
@@ -94,9 +100,13 @@ class Chat(discord.Cog):
         return reply, bool(result.actions)
 
     async def system_prompt(self, channel, query: str | None = None,
-                            speaker: str | None = None) -> str:
-        """Prompt système : persona + contexte + souvenirs (importants + liés au message)."""
+                            speaker: str | None = None, guest: bool = False) -> str:
+        """Prompt système : persona + contexte + souvenirs (importants + liés au message).
+        Pour un non-owner : aucun souvenir, aucune action."""
         bot = self.__bot
+        if guest:
+            return build_system_prompt(bot.persona.text, bot.user.display_name, place_name(channel),
+                                       speaker=speaker, guest=True, web=bot.config.web_access)
         memories = {m.id: m for m in bot.long_term.core()}
         related = await bot.long_term.search(query, limit=5) if query else []
         for memory in related:

@@ -89,7 +89,7 @@ class ResolverTest(unittest.TestCase):
 class ExecuteTest(unittest.TestCase):
     def test_send_message_and_errors(self):
         bot, bunker, _ = make_bot()
-        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
         result = asyncio.run(tools.execute(ctx, "send_message", {"channel": "Le Bunker", "content": "Salut !"}))
         self.assertIn("Message envoyé", result)
         self.assertEqual(bunker.text_channels[1].sent, ["Salut !"])
@@ -100,11 +100,23 @@ class ExecuteTest(unittest.TestCase):
 
     def test_dangerous_tool_needs_confirmation(self):
         bot, _, _ = make_bot()
-        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
         with mock.patch.object(tools, "ask_confirmation", mock.AsyncMock(return_value=False)) as ask:
             result = asyncio.run(tools.execute(ctx, "delete_channel", {"channel": "memes"}))
         ask.assert_awaited_once()
         self.assertIn("annulée", result)
+
+    def test_guest_cannot_act(self):
+        bot, _, _ = make_bot()
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=7, name="Sachiko"))
+        with mock.patch.object(tools, "ask_confirmation", mock.AsyncMock(return_value=True)) as ask:
+            for name, args in [("delete_channel", {"channel": "memes"}),
+                               ("send_dm", {"user": "x", "content": "y"}),
+                               ("recall", {"query": "adresse"})]:
+                self.assertIn("seul mon créateur", asyncio.run(tools.execute(ctx, name, args)))
+        ask.assert_not_awaited()
+        names = {s["function"]["name"] for s in tools.schemas(guest=True)}
+        self.assertEqual(names, tools.GUEST_TOOLS)
 
     def test_schemas_are_valid(self):
         for schema in tools.schemas():
@@ -169,7 +181,7 @@ class WebTest(unittest.TestCase):
         bot.config.web_access = False
         names = [s["function"]["name"] for s in tools.schemas(False)]
         self.assertNotIn("web_search", names)
-        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
         self.assertIn("désactivé", asyncio.run(tools.execute(ctx, "web_search", {"query": "x"})))
 
 
@@ -197,7 +209,7 @@ class AgentTest(unittest.TestCase):
                                                          "arguments": {"channel": "Le Bunker", "content": "Hello"}}}]},
             {"content": "C'est envoyé !"},
         ])
-        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
         result = asyncio.run(run_agent(llm, [{"role": "user", "content": "dis bonjour"}], ctx))
         self.assertEqual(result.text, "C'est envoyé !")
         self.assertEqual(len(result.actions), 1)
@@ -206,7 +218,7 @@ class AgentTest(unittest.TestCase):
     def test_announced_action_is_nudged_once(self):
         bot, _, _ = make_bot()
         llm = FakeLLM([{"content": "Je vais vérifier ça."}, {"content": "Il fait 12°C."}])
-        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
         result = asyncio.run(run_agent(llm, [{"role": "user", "content": "météo ?"}], ctx))
         self.assertEqual(result.text, "Il fait 12°C.")
         self.assertIn("Note système", llm.seen[1][-1]["content"])
