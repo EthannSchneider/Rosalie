@@ -13,9 +13,6 @@ storages/*
 
 finetune/.venv/
 finetune/data/
-finetune/adapters/
-finetune/fused/
+finetune/output/
 
-finetune/peft_adapter/
-finetune/.llama.cpp/
-finetune/Modelfile
+**/__pycache__/

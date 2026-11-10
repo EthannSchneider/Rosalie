@@ -28,10 +28,9 @@ COPY commands/ commands/
 COPY cogs/ cogs/
 COPY libs/ libs/
 COPY personas/ personas/
-COPY finetune/seed.jsonl finetune/seed.jsonl
 COPY tests/ tests/
-RUN mkdir -p storages finetune/data \
-    && chown -R gideon:gideon storages finetune
+RUN mkdir -p storages \
+    && chown -R gideon:gideon storages
 USER gideon
 ENTRYPOINT ["python3", "bot.py"]
 CMD ["gideon"]

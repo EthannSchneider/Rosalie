@@ -13,7 +13,4 @@ venv
 log.txt
 storages
 deploy
-finetune/.venv
-finetune/data
-finetune/adapters
-finetune/fused
+finetune

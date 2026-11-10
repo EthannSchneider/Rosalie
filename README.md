@@ -13,7 +13,6 @@ commands/                    sous-commandes CLI (comme Compagnie Hydromel)
   _bot.py                    création du discord.Bot + services + chargement des cogs
   gideon.py                  python bot.py gideon   → lance le bot
   pull.py                    python bot.py pull     → télécharge un modèle Ollama
-  dataset.py                 python bot.py dataset  → construit finetune/data/*.jsonl
   test.py                    python bot.py test     → tests unitaires
 cogs/
   reload.py                  /reload
@@ -34,7 +33,7 @@ libs/
   conversation/prompt.py     prompt système (persona + contexte + souvenirs)
   llm/ollama.py              client async Ollama (chat, outils, embeddings)
 personas/gideon.md           sa personnalité (à modifier librement, /gideon persona)
-finetune/                    entraînement de la personnalité (mlx-lm)
+finetune/                    fine-tuning, séparé du bot (voir finetune/README.md)
 ```
 
 ## Ce qu'elle sait faire
@@ -108,12 +107,8 @@ discute sans outil quand il faut et agit correctement quand on lui demande.
 
 ## Fine-tuning de la personnalité
 
-1. **Collecter** : ⭐ sur ses bonnes réponses, clic droit → Applications →
-   **Corriger (Gideon)** sur les ratées. Seules les réponses de discussion sont gardées
-   (pas celles liées à une action, sinon elle apprendrait à prétendre agir sans outil).
-   Exemples écrits à la main : `finetune/seed.jsonl`. Vise 200+ (`/gideon status`).
-2. **Entraîner** : `./finetune/train.sh` (QLoRA Qwen3-8B 4 bits, ~10 Go de RAM).
-3. **Importer dans Ollama : en attente.** Ollama 0.40 ne charge plus les adaptateurs LoRA, et
-   l'import direct du modèle fusionné ne garde pas le bon template (la réflexion fuit, plus
-   d'outils). La solution fiable : convertir en GGUF avec llama.cpp puis réutiliser le
-   template de `qwen3:8b`.
+Tout est dans [`finetune/`](finetune/README.md), séparé du bot : récupération de
+conversations Discord / WhatsApp, conversion, dataset, entraînement. Côté bot, il ne reste
+que la collecte d'exemples pendant que tu discutes avec elle : ⭐ sur ses bonnes réponses,
+clic droit → Applications → **Corriger (Gideon)** sur les ratées (seules les réponses de
+discussion sont gardées, pas celles liées à une action).

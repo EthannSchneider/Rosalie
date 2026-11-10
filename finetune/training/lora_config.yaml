@@ -4,8 +4,8 @@
 model: "mlx-community/Qwen3-8B-4bit"
 train: true
 fine_tune_type: lora
-data: "finetune/data"
-adapter_path: "finetune/adapters"
+data: "finetune/data/mlx"
+adapter_path: "finetune/output/adapters"
 
 # On n'apprend que la réponse finale de Gideon, pas les messages d'Ethann
 mask_prompt: true

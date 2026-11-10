@@ -9,7 +9,6 @@ from libs.log import Log
 COMMANDS = {
     "gideon": "gideon",        # lance le bot Discord
     "pull": "pull",            # télécharge le modèle Ollama configuré
-    "dataset": "dataset",      # construit finetune/data/{train,valid}.jsonl
     "test": "test",            # lance les tests unitaires
 }
 
