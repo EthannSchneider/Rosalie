@@ -79,9 +79,9 @@ async def pin_message(ctx: ToolContext, message_id: str) -> str:
 3. Modèles : `ollama pull qwen3:8b && ollama pull nomic-embed-text`
 
 ```bash
-python3 -m venv env && source env/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python bot.py
+python bot.py            # tests : python bot.py test
 ```
 
 Docker : `docker compose -f deploy/docker/compose.yml up -d --build`
