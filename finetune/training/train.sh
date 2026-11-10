@@ -17,7 +17,8 @@ fi
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
 VENV="$ROOT/finetune/.venv"
-CONFIG_MODEL="$(grep '^model:' finetune/training/lora_config.yaml | sed -E 's/model: *"?([^"]*)"?/\1/')"
+# tr -d '\r' : ignore les fins de ligne Windows si le fichier en a (git core.autocrlf)
+CONFIG_MODEL="$(grep '^model:' finetune/training/lora_config.yaml | tr -d '\r' | sed -E 's/model: *"?([^"]*)"?/\1/')"
 MLX_MODEL="${MLX_MODEL:-$CONFIG_MODEL}"
 OLLAMA_NAME="${OLLAMA_NAME:-rosalie}"
 OLLAMA_BASE="${OLLAMA_BASE:-qwen3:8b}"

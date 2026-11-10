@@ -1,1 +1,2 @@
-*.sh text eol=lf
+# Fins de ligne Unix pour tout le projet, quel que soit core.autocrlf
+* text=auto eol=lf
