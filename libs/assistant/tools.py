@@ -13,6 +13,7 @@ from libs.assistant.confirm import ask_confirmation
 from libs.assistant.resolver import (ResolveError, resolve_channel, resolve_guild,
                                      resolve_member, resolve_role, resolve_user)
 from libs import web
+from libs.conversation.memory import Entry
 from libs.log import Log
 
 
@@ -125,6 +126,21 @@ def _int(value, default: int, low: int, high: int) -> int:
         return default
 
 
+def _remember_sent(ctx: ToolContext, sent: discord.Message, content: str):
+    """Le message envoyé par un outil entre dans l'historique du salon de destination :
+    si la personne répond, Rosalie sait ce qu'elle lui a écrit et pour qui."""
+    memory = getattr(ctx.bot, "memory", None)
+    channel = getattr(sent, "channel", None)
+    if memory is None or channel is None or channel.id == getattr(ctx.channel, "id", None):
+        return   # même salon : la réponse finale y est déjà enregistrée
+
+    me = ctx.bot.user
+    memory.add(channel.id, Entry(
+        author_id=me.id, author_name=me.display_name,
+        content=content,
+        is_bot=True, message_id=sent.id, acted=True))
+
+
 # --------------------------------------------------------------------------- Discord
 
 @tool("list_servers", "Liste les serveurs Discord où Rosalie est présente.")
@@ -157,6 +173,7 @@ async def list_channels(ctx: ToolContext, server: str | None = None) -> str:
 async def send_message(ctx: ToolContext, channel: str, content: str, server: str | None = None) -> str:
     target = resolve_channel(ctx.bot, channel, ctx.channel, server)
     sent = await target.send(content[:2000])
+    _remember_sent(ctx, sent, content[:2000])
     where = getattr(target, "name", "DM")
     guild = getattr(target, "guild", None)
     return f"Message envoyé dans #{where}" + (f" ({guild.name})" if guild else "") + f", id {sent.id}."
@@ -168,8 +185,9 @@ async def send_message(ctx: ToolContext, channel: str, content: str, server: str
       required=("user", "content"))
 async def send_dm(ctx: ToolContext, user: str, content: str) -> str:
     target = await resolve_user(ctx.bot, user)
-    await target.send(content[:2000])
-    return f"Message privé envoyé à {target.display_name}."
+    sent = await target.send(content[:2000])
+    _remember_sent(ctx, sent, content[:2000])
+    return f"Message privé envoyé à {target.display_name} : « {content[:2000]} »"
 
 
 @tool("read_messages",

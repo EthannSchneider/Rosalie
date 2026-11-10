@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 
 from libs.llm.ollama import OllamaClient, OllamaError
 from libs.log import Log
@@ -43,6 +44,17 @@ def _today() -> str:
     return f"{DAYS[today.weekday()]} {today:%d.%m.%Y} (prochains jours : {upcoming})"
 
 
+def _parse(raw: str) -> list:
+    """Tolère les modèles qui répondent vide, entourent le JSON de ```json ou de <think>."""
+    raw = re.sub(r"<think>.*?(</think>|$)", "", raw or "", flags=re.DOTALL)
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        if raw.strip():
+            raise json.JSONDecodeError("pas de JSON dans la réponse", raw, 0)
+        return []   # réponse vide : rien à retenir
+    return json.loads(match.group()).get("memories", []) or []
+
+
 async def extract_memories(llm: OllamaClient, model: str, long_term: LongTermMemory,
                            speaker: str, user_text: str, reply: str) -> list[int]:
     """Appel LLM en arrière-plan : note les faits durables du dernier échange."""
@@ -53,7 +65,7 @@ async def extract_memories(llm: OllamaClient, model: str, long_term: LongTermMem
                 today=_today(), speaker=speaker, known="\n".join(m.content for m in known) or "(rien)")},
              {"role": "user", "content": f"{speaker}: {user_text}\nRosalie: {reply}"}],
             model=model, format=SCHEMA, options={"temperature": 0, "num_predict": 300})
-        items = json.loads(raw).get("memories", [])
+        items = _parse(raw)
     except (OllamaError, json.JSONDecodeError, AttributeError) as error:
         Log.warning(f"Memory extraction failed: {error}")
         return []

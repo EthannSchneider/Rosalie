@@ -214,6 +214,26 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(result.text, "C'est envoyé !")
         self.assertEqual(len(result.actions), 1)
         self.assertEqual(llm.seen[1][-1]["role"], "tool")
+        # La trace (appel + résultat) est renvoyée pour être gardée dans l'historique
+        self.assertEqual([m["role"] for m in result.trace], ["assistant", "tool"])
+        self.assertEqual(result.trace[0]["tool_calls"][0]["function"]["arguments"]["content"], "Hello")
+
+    def test_sent_message_is_recorded_in_target_channel(self):
+        from libs.conversation.memory import ConversationMemory
+        bot, bunker, _ = make_bot()
+        target = bunker.text_channels[1]
+        target.send = lambda content: asyncio.sleep(0, SimpleNamespace(id=777, channel=target))
+        with tempfile.TemporaryDirectory() as directory:
+            bot.memory = ConversationMemory(Path(directory))
+            bot.user = SimpleNamespace(id=1, display_name="Rosalie")
+            ctx = tools.ToolContext(bot=bot, channel=SimpleNamespace(id=5),
+                                    author=SimpleNamespace(id=42, name="Ethann", display_name="Ethann"))
+            asyncio.run(tools.execute(ctx, "send_message", {"channel": "Le Bunker", "content": "Salut !"}))
+            entries = bot.memory.get(target.id)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].content, "Salut !")
+            self.assertTrue(entries[0].is_bot)
+            self.assertEqual(bot.memory.get(5), [])   # rien en double dans le salon d'origine
 
     def test_announced_action_is_nudged_once(self):
         bot, _, _ = make_bot()

@@ -13,6 +13,8 @@ class Entry:
     is_bot: bool
     message_id: int = 0
     acted: bool = False  # la réponse a déclenché des outils (exclue du fine-tuning)
+    # Appels d'outils faits avant cette réponse (ce qui a vraiment été envoyé, à qui…)
+    tool_messages: list[dict] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
 
 

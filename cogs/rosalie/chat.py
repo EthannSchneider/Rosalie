@@ -51,7 +51,7 @@ class Chat(discord.Cog):
         async with self.__locks[channel_id]:
             try:
                 async with message.channel.typing():
-                    reply, acted = await self.respond(message)
+                    reply, trace = await self.respond(message)
             except OllamaError as error:
                 Log.error(f"Ollama error: {error}")
                 await message.reply("Je n'arrive pas à joindre mon cerveau… Ollama est lancé ?",
@@ -70,7 +70,8 @@ class Chat(discord.Cog):
                 content=reply,
                 is_bot=True,
                 message_id=sent.id,
-                acted=acted,
+                acted=bool(trace),
+                tool_messages=trace,
             ))
             bot.decider.mark_active(channel_id, message.author.id)
 
@@ -83,21 +84,21 @@ class Chat(discord.Cog):
         self.__background.add(task)
         task.add_done_callback(self.__background.discard)
 
-    async def respond(self, message: discord.Message) -> tuple[str, bool]:
+    async def respond(self, message: discord.Message) -> tuple[str, list[dict]]:
         bot = self.__bot
         entries = bot.memory.get(message.channel.id)
         system = await self.system_prompt(message.channel, query=message.content,
                                           speaker=message.author.display_name,
                                           guest=not bot.decider.is_owner(message.author.id))
         ctx = ToolContext(bot=bot, channel=message.channel, author=message.author)
-        result = await run_agent(bot.llm, build_messages(system, entries), ctx,
+        result = await run_agent(bot.llm, build_messages(system, entries, tools=True), ctx,
                                  max_steps=bot.config.max_tool_steps)
         reply = clean_reply(result.text, bot.user.display_name)
         if not reply:
             reply = "C'est fait." if result.actions else "…"
         if result.actions:
             Log.info("Actions: " + " | ".join(result.actions))
-        return reply, bool(result.actions)
+        return reply, result.trace
 
     async def system_prompt(self, channel, query: str | None = None,
                             speaker: str | None = None, guest: bool = False) -> str:

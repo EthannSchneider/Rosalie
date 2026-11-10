@@ -108,6 +108,22 @@ class PromptTest(unittest.TestCase):
         self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant"])
         self.assertEqual(messages[1]["content"], "salut\nt'es là ?")
 
+    def test_build_messages_replays_tool_calls(self):
+        call = {"role": "assistant", "content": "",
+                "tool_calls": [{"function": {"name": "send_dm",
+                                             "arguments": {"user": "Sachiko", "content": "Coucou"}}}]}
+        entries = [
+            Entry(ME, "Ethann", "envoie coucou à Sachiko", False),
+            Entry(BOT_ID, "Rosalie", "C'est envoyé !", True, acted=True,
+                  tool_messages=[call, {"role": "tool", "content": "ok", "tool_name": "send_dm"}]),
+            Entry(ME, "Ethann", "tu lui as dit quoi ?", False),
+        ]
+        roles = [m["role"] for m in build_messages("SYS", entries, tools=True)]
+        self.assertEqual(roles, ["system", "user", "assistant", "tool", "assistant", "user"])
+        # Sans tools (fine-tuning) : uniquement le texte
+        roles = [m["role"] for m in build_messages("SYS", entries)]
+        self.assertEqual(roles, ["system", "user", "assistant", "user"])
+
     def test_system_prompt_contains_memories(self):
         prompt = build_system_prompt("PERSONA", "Rosalie", "DM", servers=["Le Bunker"],
                                      memories=["#1 anniversaire le 14 mars"])
