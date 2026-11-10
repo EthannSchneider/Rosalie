@@ -3,6 +3,7 @@ import os
 
 import discord
 
+from libs.browser import VirtualBrowser
 from libs.config import ROOT_DIR, Config
 from libs.conversation.decider import ReplyDecider
 from libs.conversation.memory import ConversationMemory
@@ -10,6 +11,7 @@ from libs.dataset.store import DatasetStore
 from libs.llm.ollama import OllamaClient
 from libs.llm.persona import Persona
 from libs.log import Log
+from libs import web
 from libs.memory.long_term import LongTermMemory
 from libs.settings import Settings
 
@@ -53,6 +55,7 @@ def build_bot(config: Config) -> discord.Bot:
     bot.long_term = LongTermMemory(config.storage_dir / "long_term.sqlite3", bot.llm, config.embed_model)
     bot.dataset = DatasetStore(config.storage_dir / "dataset" / "samples.jsonl")
     bot.decider = ReplyDecider(config, bot.llm, bot.settings)
+    bot.browser = VirtualBrowser(web.USER_AGENT) if config.web_access and config.web_browser != "never" else None
     return bot
 
 
@@ -79,6 +82,8 @@ async def _run_bot(bot_name: str):
         await bot.start(token)
     finally:
         await bot.llm.close()
+        if bot.browser:
+            await bot.browser.close()
         bot.long_term.close()
         if not bot.is_closed():
             await bot.close()

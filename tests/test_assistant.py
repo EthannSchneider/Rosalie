@@ -113,6 +113,66 @@ class ExecuteTest(unittest.TestCase):
                 self.assertIn(name, function["parameters"]["properties"])
 
 
+class WebTest(unittest.TestCase):
+    def test_local_network_is_refused(self):
+        from libs import web
+        for url in ("http://127.0.0.1:11434/api/tags", "http://localhost/", "http://192.168.1.1/",
+                    "http://[::1]/", "file:///etc/passwd", "ftp://example.com"):
+            with self.assertRaises(web.WebError, msg=url):
+                asyncio.run(web._check_public(url))
+
+    def test_text_extraction(self):
+        from libs.web import _TextExtractor
+        parser = _TextExtractor()
+        parser.feed("<html><head><title>Météo</title><style>p{}</style></head><body>"
+                    "<nav>menu</nav><svg><title>icone</title></svg><h1>Lausanne</h1><p>12&deg;C, pluie</p>"
+                    "<script>alert(1)</script></body></html>")
+        self.assertEqual(parser.title, "Météo")
+        self.assertEqual(parser.text(), "Lausanne\n12°C, pluie")
+
+    def test_browser_fallback(self):
+        from libs import web
+
+        class FakeBrowser:
+            def __init__(self):
+                self.calls = 0
+
+            async def render(self, url):
+                self.calls += 1
+                return "App", "\n".join(f"Jour {i} : 14°C, pluie {i} mm" for i in range(80))
+
+        async def no_dns_check(url):
+            return None
+
+        js_app = "<html><title>App</title><body><div id='root'></div><script>app()</script></body></html>"
+        static = "<html><title>Doc</title><main>" + "".join(
+            f"<p>Paragraphe {i} : texte déjà présent dans le HTML.</p>" for i in range(60)) + "</main></html>"
+        with mock.patch.object(web, "_check_public", no_dns_check):
+            for body, expected_calls, expected in ((js_app, 1, "14°C"), (static, 0, "déjà présent")):
+                browser = FakeBrowser()
+                with mock.patch.object(web, "_download", mock.AsyncMock(
+                        return_value=("https://x.ch", "text/html", body))):
+                    title, text = asyncio.run(web.fetch("https://x.ch", browser=browser))
+                self.assertEqual(browser.calls, expected_calls)
+                self.assertIn(expected, text)
+
+            # anti-robot (403) : le navigateur prend le relais ; mode never : pas de navigateur
+            browser = FakeBrowser()
+            with mock.patch.object(web, "_download", mock.AsyncMock(
+                    side_effect=web.WebError("HTTP 403", status=403))):
+                self.assertIn("14°C", asyncio.run(web.fetch("https://x.ch", browser=browser))[1])
+                with self.assertRaises(web.WebError):
+                    asyncio.run(web.fetch("https://x.ch", browser=browser, mode="never"))
+
+    def test_web_tools_can_be_disabled(self):
+        bot, _, _ = make_bot()
+        bot.config.web_access = False
+        names = [s["function"]["name"] for s in tools.schemas(False)]
+        self.assertNotIn("web_search", names)
+        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        self.assertIn("désactivé", asyncio.run(tools.execute(ctx, "web_search", {"query": "x"})))
+
+
 class FakeLLM:
     """Renvoie une suite de réponses prédéfinies ; embeddings = sac de mots."""
 
@@ -142,6 +202,17 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(result.text, "C'est envoyé !")
         self.assertEqual(len(result.actions), 1)
         self.assertEqual(llm.seen[1][-1]["role"], "tool")
+
+    def test_announced_action_is_nudged_once(self):
+        bot, _, _ = make_bot()
+        llm = FakeLLM([{"content": "Je vais vérifier ça."}, {"content": "Il fait 12°C."}])
+        ctx = tools.ToolContext(bot=bot, channel=None, author="Ethann")
+        result = asyncio.run(run_agent(llm, [{"role": "user", "content": "météo ?"}], ctx))
+        self.assertEqual(result.text, "Il fait 12°C.")
+        self.assertIn("Note système", llm.seen[1][-1]["content"])
+        llm = FakeLLM([{"content": "Je vais vérifier."}, {"content": "Je vais encore vérifier."}])
+        result = asyncio.run(run_agent(llm, [{"role": "user", "content": "météo ?"}], ctx))
+        self.assertEqual(result.text, "Je vais encore vérifier.")
 
     def test_inline_json_tool_call(self):
         calls = _inline_tool_calls('{"name": "recall", "parameters": {"query": "pizza"}}')

@@ -25,6 +25,8 @@ libs/
   assistant/tools.py         les actions Discord + mémoire (ajoute les tiennes ici)
   assistant/resolver.py      « Le bunker » / #salon / @membre → objets Discord
   assistant/confirm.py       boutons Confirmer/Annuler pour les actions dangereuses
+  web.py                     recherche web + lecture de pages (accès internet)
+  browser.py                 navigateur virtuel Chromium pour les pages en JavaScript
   memory/long_term.py        mémoire long terme (SQLite + embeddings)
   memory/extractor.py        prise de notes automatique après chaque échange
   conversation/decider.py    « dois-je répondre ? »
@@ -41,6 +43,16 @@ Envoyer un message (dans un salon, ou sur un serveur par son nom), envoyer un MP
 salon, créer/supprimer un salon, purger des messages, donner/retirer un rôle,
 expulser/bannir, changer son statut. Les actions destructrices (suppression, purge,
 kick, ban) demandent une **confirmation par bouton**.
+
+**Internet** : `web_search` (DuckDuckGo par défaut, sans clé ; ou SearXNG / Brave via
+`WEB_SEARCH_PROVIDER`) et `fetch_url` pour lire une page. Les pages construites en
+JavaScript (web components, applis React…) sont ouvertes dans un **navigateur virtuel**
+(Chromium headless via Playwright, `libs/browser.py`) : lecture HTTP rapide d'abord, et le
+navigateur seulement si la page est vide ou bloquée (`WEB_BROWSER=auto|always|never`).
+Dans le navigateur aussi, toute requête vers le réseau local est bloquée. Elle cherche d'elle-même pour
+l'actualité, la météo, les prix… et cite ses sources. Les adresses du réseau local
+(localhost, 192.168.x…) sont refusées, et le contenu web est traité comme des données,
+jamais comme des ordres. `WEB_ACCESS=false` pour couper.
 
 Ajouter une action = une fonction dans `libs/assistant/tools.py` :
 
@@ -81,6 +93,7 @@ async def pin_message(ctx: ToolContext, message_id: str) -> str:
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python -m playwright install chromium   # navigateur virtuel (sites en JavaScript)
 python bot.py            # tests : python bot.py test
 ```
 

@@ -12,11 +12,17 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     STORAGE_DIR=/app/storages \
-    LOG_FILE=/app/storages/log.txt
+    LOG_FILE=/app/storages/log.txt \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN groupadd --gid 10001 gideon \
     && useradd --uid 10001 --gid gideon --no-create-home gideon
 WORKDIR /app
 COPY --from=dependencies /opt/venv /opt/venv
+# Navigateur virtuel (Chromium headless) + ses bibliothèques système, pour les sites en JavaScript
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/*
 COPY bot.py requirements.txt ./
 COPY commands/ commands/
 COPY cogs/ cogs/

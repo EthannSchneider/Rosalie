@@ -14,6 +14,13 @@ class AgentResult:
 
 _INLINE_CALL = re.compile(r"^\s*(\{.*\})\s*$", re.DOTALL)
 
+# « Je vais vérifier… », « Laisse-moi regarder… » : le modèle annonce une action puis s'arrête
+_ANNOUNCES_ACTION = re.compile(
+    r"^\W*(je vais|je m'en occupe|laisse-moi|attends|je regarde|je vérifie|je cherche|"
+    r"un instant|une seconde|je lis)\b", re.IGNORECASE)
+NUDGE = ("(Note système : tu viens d'annoncer une action sans la faire. Fais-la maintenant "
+         "avec les outils, puis donne ta réponse finale.)")
+
 
 def _inline_tool_calls(content: str) -> list[dict]:
     """Certains modèles écrivent l'appel en JSON dans le texte au lieu de tool_calls."""
@@ -36,12 +43,18 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
     """Boucle « le modèle appelle des outils -> on lui renvoie les résultats »
     jusqu'à ce qu'il produise une réponse finale en texte."""
     actions: list[str] = []
-    tools = schemas()
+    tools = schemas(getattr(ctx.bot.config, "web_access", True))
+    nudged = False
     for _ in range(max_steps):
         message = await llm.chat_message(messages, tools=tools)
         content = message.get("content", "") or ""
         calls = message.get("tool_calls") or _inline_tool_calls(content)
         if not calls:
+            if not nudged and _ANNOUNCES_ACTION.search(content.strip()):
+                nudged = True
+                messages += [{"role": "assistant", "content": content},
+                             {"role": "user", "content": NUDGE}]
+                continue
             return AgentResult(content.strip(), actions)
 
         messages.append({"role": "assistant", "content": "", "tool_calls": calls})

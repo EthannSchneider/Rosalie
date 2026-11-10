@@ -51,6 +51,13 @@ class Config:
     use_llm_decider: bool
     max_tool_steps: int
 
+    # Internet
+    web_access: bool
+    web_search_provider: str           # duckduckgo | searxng | brave
+    searxng_url: str
+    brave_api_key: str
+    web_browser: str                   # auto | always | never (navigateur virtuel pour le JavaScript)
+
     # Fichiers
     persona_file: Path
     storage_dir: Path
@@ -74,6 +81,11 @@ class Config:
             conversation_timeout=int(os.getenv("CONVERSATION_TIMEOUT", "180")),
             use_llm_decider=_bool("USE_LLM_DECIDER", True),
             max_tool_steps=int(os.getenv("MAX_TOOL_STEPS", "6")),
+            web_access=_bool("WEB_ACCESS", True),
+            web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "duckduckgo").lower(),
+            searxng_url=os.getenv("SEARXNG_URL", ""),
+            brave_api_key=os.getenv("BRAVE_API_KEY", ""),
+            web_browser=os.getenv("WEB_BROWSER", "auto").lower(),
             persona_file=_path("PERSONA_FILE", "personas/gideon.md"),
             storage_dir=_path("STORAGE_DIR", "storages"),
         )
