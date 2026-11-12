@@ -73,6 +73,9 @@ class Config:
     # Contact mis dans le User-Agent pour les sites qui l'exigent (Wikimedia Commons). Vide = pas utilisé.
     web_contact: str = ""
 
+    # Outils à ne pas proposer au modèle (chaque outil prend ~100 tokens de contexte)
+    disabled_tools: tuple[str, ...] = ()
+
     # Exécution de code (toujours après confirmation de l'owner sur Discord)
     code_exec: bool = True
     code_timeout: int = 60             # secondes max par exécution
@@ -118,6 +121,7 @@ class Config:
             reply_delay=float(os.getenv("REPLY_DELAY", "2")),
             reply_max_wait=float(os.getenv("REPLY_MAX_WAIT", "20")),
             web_contact=os.getenv("WEB_CONTACT", "").strip(),
+            disabled_tools=_list("DISABLED_TOOLS", ""),
             code_exec=_bool("CODE_EXEC", True),
             code_timeout=int(os.getenv("CODE_TIMEOUT", "60")),
             code_max_runs=int(os.getenv("CODE_MAX_RUNS", "3")),

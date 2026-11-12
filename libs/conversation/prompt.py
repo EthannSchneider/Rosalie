@@ -79,7 +79,8 @@ def build_system_prompt(persona: str, bot_name: str, place: str,
         "",
         *(_code_section(code_env) if code_env else []),
         "## Internet",
-        "- Pour l'actualité, la météo, des prix, des horaires ou tout fait que tu ne connais pas "
+        "- Pour la météo, utilise weather (fiable, sans recherche).",
+        "- Pour l'actualité, des prix, des horaires ou tout fait que tu ne connais pas "
         "avec certitude, cherche avec web_search (puis fetch_url pour lire une page) au lieu de deviner.",
         "- Si les extraits de web_search ne suffisent pas, lis toi-même le meilleur résultat avec "
         "fetch_url, sans demander la permission. Si une page est illisible, essaie le résultat suivant.",

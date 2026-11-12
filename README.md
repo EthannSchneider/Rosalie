@@ -24,13 +24,14 @@ libs/
   assistant/agent.py         boucle LLM ⇄ outils
   assistant/tools/           les outils, un fichier par catégorie (ajoute les tiens ici) :
     base.py                  socle : ToolContext, @tool, registre, exécution sécurisée
-    server.py                serveurs, salons, membres, statut
-    messages.py              envoyer / lire / purger des messages
-    moderation.py            rôles, kick, ban
+    server.py                infos serveur/membre, salons, membres, rôles, invitations, fils, statut
+    messages.py              envoyer, lire, chercher, réagir, épingler, modifier, supprimer, sondages
+    moderation.py            rôles, surnoms, exclusion temporaire, kick, ban
     initiative.py            say, relances programmées
     memory.py                souvenirs à long terme
     internet.py              recherche web, lecture de pages
     images.py                chercher et envoyer des photos
+    utilities.py             météo (Open-Meteo)
   assistant/resolver.py      « Le bunker » / #salon / @membre → objets Discord
   assistant/confirm.py       boutons Confirmer/Annuler (actions dangereuses, code à exécuter)
   assistant/code_runner.py   exécution du code qu'elle écrit (```run-python / ```run-bash)
@@ -50,10 +51,19 @@ finetune/                    fine-tuning, séparé du bot (voir finetune/README.
 
 ## Ce qu'elle sait faire
 
-Envoyer un message (dans un salon, ou sur un serveur par son nom), envoyer un MP, lire un
-salon, créer/supprimer un salon, purger des messages, donner/retirer un rôle,
-expulser/bannir, changer son statut. Les actions destructrices (suppression, purge,
-kick, ban) demandent une **confirmation par bouton**.
+- **Messages** : envoyer (salon, serveur par son nom, MP), lire, chercher (`search_messages`),
+  réagir avec un emoji, épingler, modifier ses propres messages, supprimer un message, purger,
+  créer un sondage Discord.
+- **Serveur** : infos du serveur et d'un membre, liste des membres / rôles / salons, créer ou
+  supprimer un salon, créer un fil ou une invitation, changer son statut.
+- **Modération** : donner/retirer un rôle, changer un surnom, exclure temporairement, expulser,
+  bannir.
+- **Météo** : `weather` (Open-Meteo, gratuit, sans clé, prévisions sur 7 jours).
+
+Les messages se désignent par id, par lien Discord, ou par « dernier » / « mon dernier ».
+Les actions destructrices (supprimer un salon ou un message, purge, exclusion, kick, ban)
+demandent une **confirmation par bouton**. `DISABLED_TOOLS` retire des outils dont tu ne te
+sers pas (chaque outil occupe ~100 tokens du contexte).
 
 **Internet** : `web_search` (DuckDuckGo par défaut, sans clé ; ou SearXNG / Brave via
 `WEB_SEARCH_PROVIDER`) et `fetch_url` pour lire une page. Les pages construites en

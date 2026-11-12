@@ -1,8 +1,8 @@
-"""Serveurs : lister serveurs, salons et membres, créer/supprimer un salon, statut."""
+"""Serveurs : infos, salons, membres, rôles, invitations, fils, statut."""
 import discord
 
-from libs.assistant.resolver import resolve_guild, resolve_role
-from libs.assistant.tools.base import ToolContext, tool, _channel
+from libs.assistant.resolver import ResolveError, resolve_guild, resolve_member, resolve_role
+from libs.assistant.tools.base import ToolContext, tool, _channel, _int
 
 
 @tool("list_servers", "Liste les serveurs Discord où Rosalie est présente.")
@@ -88,3 +88,85 @@ async def delete_channel(ctx: ToolContext, channel: str, server: str | None = No
 async def set_status(ctx: ToolContext, text: str | None = None) -> str:
     await ctx.bot.change_presence(activity=discord.Game(text) if text else None)
     return f"Statut changé : {text}" if text else "Statut retiré."
+
+
+def _date(value) -> str:
+    return f"{value:%d.%m.%Y}" if value else "?"
+
+
+@tool("server_info", "Infos sur un serveur : propriétaire, création, membres, salons, rôles, boosts.",
+      {"server": ("string", "Nom ou id du serveur (vide = serveur actuel)")})
+async def server_info(ctx: ToolContext, server: str | None = None) -> str:
+    guild = resolve_guild(ctx.bot, server, ctx.guild)
+    humans = sum(1 for m in guild.members if not m.bot)
+    return "\n".join([
+        f"Serveur « {guild.name} » (id {guild.id})",
+        f"- Propriétaire : {guild.owner.display_name if guild.owner else '?'}",
+        f"- Créé le {_date(guild.created_at)}",
+        f"- Membres : {guild.member_count} ({humans} personnes, {len(guild.members) - humans} bots)",
+        f"- Salons : {len(guild.text_channels)} texte, {len(guild.voice_channels)} vocaux, "
+        f"{len(guild.categories)} catégories",
+        f"- Rôles : {len(guild.roles) - 1}, emojis : {len(guild.emojis)}",
+        f"- Boosts : niveau {guild.premium_tier} ({guild.premium_subscription_count or 0} boosts)",
+    ] + ([f"- Description : {guild.description}"] if guild.description else []))
+
+
+@tool("member_info", "Infos sur un membre : surnom, rôles, arrivée sur le serveur, âge du compte.",
+      {"member": ("string", "Pseudo, mention ou id"),
+       "server": ("string", "Serveur (vide = actuel)")},
+      required=("member",))
+async def member_info(ctx: ToolContext, member: str, server: str | None = None) -> str:
+    guild = resolve_guild(ctx.bot, server, ctx.guild)
+    target = await resolve_member(ctx.bot, member, guild)
+    roles = [r.name for r in reversed(target.roles) if not r.is_default()]
+    timed_out = getattr(target, "communication_disabled_until", None)
+    return "\n".join(filter(None, [
+        f"{target.display_name} (@{target.name}, id {target.id})" + (" — bot" if target.bot else ""),
+        f"- Sur « {guild.name} » depuis le {_date(target.joined_at)}",
+        f"- Compte créé le {_date(target.created_at)}",
+        f"- Rôles : {', '.join(roles) if roles else 'aucun'}",
+        f"- Exclu temporairement jusqu'au {timed_out:%d.%m %H:%M}" if timed_out else "",
+    ]))
+
+
+@tool("list_roles", "Liste les rôles d'un serveur avec leur nombre de membres.",
+      {"server": ("string", "Serveur (vide = actuel)")})
+async def list_roles(ctx: ToolContext, server: str | None = None) -> str:
+    guild = resolve_guild(ctx.bot, server, ctx.guild)
+    roles = [r for r in reversed(guild.roles) if not r.is_default()]
+    lines = [f"- {r.name} : {len(r.members)} membre(s)" + (" (admin)" if r.permissions.administrator else "")
+             for r in roles[:50]]
+    return f"Rôles de « {guild.name} » :\n" + ("\n".join(lines) or "aucun rôle")
+
+
+@tool("create_invite", "Crée un lien d'invitation vers un salon/serveur.",
+      {"channel": ("string", "Salon (vide = ici)"),
+       "hours": ("integer", "Validité en heures (0 = permanente, défaut 24)"),
+       "max_uses": ("integer", "Nombre d'utilisations max (0 = illimité)")})
+async def create_invite(ctx: ToolContext, channel: str | None = None, hours: int = 24,
+                        max_uses: int = 0) -> str:
+    target = await _channel(ctx, channel)
+    if not hasattr(target, "create_invite"):
+        raise ResolveError("on ne peut pas créer d'invitation ici (message privé ?)")
+    invite = await target.create_invite(max_age=_int(hours, 24, 0, 168) * 3600,
+                                        max_uses=_int(max_uses, 0, 0, 100),
+                                        reason=f"Demandé par {ctx.author}")
+    validity = f"{_int(hours, 24, 0, 168)} h" if _int(hours, 24, 0, 168) else "permanente"
+    return f"Invitation créée : {invite.url} (validité {validity})."
+
+
+@tool("create_thread", "Crée un fil de discussion dans un salon texte.",
+      {"name": ("string", "Nom du fil"),
+       "channel": ("string", "Salon (vide = ici)"),
+       "message": ("string", "Premier message à poster dans le fil (optionnel)")},
+      required=("name",))
+async def create_thread(ctx: ToolContext, name: str, channel: str | None = None,
+                        message: str | None = None) -> str:
+    target = await _channel(ctx, channel)
+    if not isinstance(target, discord.TextChannel):
+        raise ResolveError("on ne peut créer un fil que dans un salon texte d'un serveur")
+    thread = await target.create_thread(name=name[:100], type=discord.ChannelType.public_thread,
+                                        reason=f"Demandé par {ctx.author}")
+    if message:
+        await thread.send(message[:2000])
+    return f"Fil « {thread.name} » créé dans #{target.name} (id {thread.id})."

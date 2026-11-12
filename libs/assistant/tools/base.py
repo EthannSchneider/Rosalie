@@ -1,5 +1,6 @@
 """Socle des outils : contexte, registre, décorateur @tool, exécution sécurisée, helpers."""
 import json
+import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -59,14 +60,16 @@ def tool(name: str, description: str, params: dict | None = None,
     return decorator
 
 
-WEB_TOOLS = {"web_search", "fetch_url", "send_image", "send_image_url"}
+WEB_TOOLS = {"web_search", "fetch_url", "send_image", "send_image_url", "weather"}
 # Seuls outils permis quand ce n'est pas un owner qui parle : chercher une info, rien d'autre
-GUEST_TOOLS = {"web_search", "fetch_url"}
+GUEST_TOOLS = {"web_search", "fetch_url", "weather"}
 
 
-def schemas(web_access: bool = True, guest: bool = False) -> list[dict]:
+def schemas(web_access: bool = True, guest: bool = False,
+            disabled: tuple[str, ...] | frozenset[str] = ()) -> list[dict]:
     return [t.schema() for t in TOOLS.values()
-            if (web_access or t.name not in WEB_TOOLS) and (not guest or t.name in GUEST_TOOLS)]
+            if (web_access or t.name not in WEB_TOOLS) and (not guest or t.name in GUEST_TOOLS)
+            and t.name not in disabled]
 
 
 async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> str:
@@ -74,6 +77,8 @@ async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> 
     selected = TOOLS.get(name)
     if selected is None:
         return f"Erreur : l'outil « {name} » n'existe pas."
+    if name in getattr(ctx.bot.config, "disabled_tools", ()):
+        return f"Erreur : l'outil « {name} » est désactivé (DISABLED_TOOLS)."
     if name not in GUEST_TOOLS and not ctx.is_owner:
         Log.warning(f"Tool {name} refused for non-owner {ctx.author}")
         return "Erreur : seul mon créateur peut me demander ça."
@@ -135,6 +140,36 @@ async def _channel(ctx: ToolContext, query: str | None, server: str | None = Non
         raise ResolveError(f"l'identifiant {channel_id} ne correspond à aucun salon que je peux "
                            "voir (c'est peut-être l'ID d'un message ou d'une personne, ou un salon "
                            "d'un serveur où je ne suis pas). Utilise list_channels.") from None
+
+
+_MESSAGE_LINK = re.compile(r"discord(?:app)?\.com/channels/(?:\d+|@me)/(\d+)/(\d+)")
+
+
+async def _message(ctx: ToolContext, message: str, channel: str | None = None,
+                   from_owner: bool = False) -> discord.Message:
+    """Message par id, lien Discord, ou « dernier » (le plus récent du salon qui n'est pas
+    de Rosalie ; from_owner=True : le plus récent de la personne qui parle)."""
+    text = str(message or "").strip()
+    link = _MESSAGE_LINK.search(text)
+    if link:
+        channel, text = link.group(1), link.group(2)
+    target = await _channel(ctx, channel)
+    lowered = text.lower()
+    if "dernier" in lowered or lowered in ("last", "my last"):
+        from_owner = from_owner or lowered.startswith(("mon ", "my "))
+        me = getattr(ctx.bot.user, "id", None)
+        async for candidate in target.history(limit=30):
+            if candidate.author.id != me and (not from_owner or candidate.author.id == ctx.author.id):
+                return candidate
+        raise ResolveError("aucun message récent trouvé dans ce salon")
+    message_id = _id(text)
+    if not message_id:
+        raise ResolveError(f"« {message} » n'est pas un id ou un lien de message "
+                           "(utilise read_messages pour voir les ids)")
+    try:
+        return await target.fetch_message(message_id)
+    except discord.NotFound:
+        raise ResolveError(f"message {message_id} introuvable dans ce salon") from None
 
 
 def _remember_sent(ctx: ToolContext, sent: discord.Message, content: str):

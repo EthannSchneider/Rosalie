@@ -105,7 +105,8 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
     actions: list[str] = []
     trace: list[dict] = []
     errors: list[str] = []
-    tools = schemas(getattr(ctx.bot.config, "web_access", True), guest=not ctx.is_owner)
+    tools = schemas(getattr(ctx.bot.config, "web_access", True), guest=not ctx.is_owner,
+                    disabled=getattr(ctx.bot.config, "disabled_tools", ()))
     nudged = False
     num_ctx = getattr(ctx.bot.config, "num_ctx", 8192)
     budget = int(num_ctx * (1 - OUTPUT_RESERVE) * CHARS_PER_TOKEN) - len(json.dumps(tools, ensure_ascii=False))
