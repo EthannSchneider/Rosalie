@@ -12,7 +12,7 @@ from libs.assistant.code_runner import (REFUSED_NOTE, environment_line, extract_
                                         result_note, run_code)
 from libs.assistant.confirm import ask_code_confirmation
 from libs.assistant.tools import ToolContext
-from libs.conversation.initiative import is_silence, with_note
+from libs.conversation.initiative import SILENCE, is_silence, with_note
 from libs.conversation.memory import Entry
 from libs.conversation.prompt import build_messages, build_system_prompt, clean_reply
 from libs.llm.ollama import OllamaError
@@ -21,6 +21,8 @@ from libs.memory.extractor import extract_memories
 from libs.utils.discord_utils import message_text, place_name, split_message
 
 
+MUST_REPLY_NOTE = ("(Note système : on te parle directement, tu dois répondre. Pas de [SILENCE]. "
+                   "Si tu ne peux pas faire ce qu'on te demande, explique pourquoi.)")
 TYPING_EXTEND = 8.0   # un événement « écrit… » dure ~10 s côté Discord
 
 
@@ -30,6 +32,7 @@ class _Pending:
     message: discord.Message
     deadline: float
     limit: float
+    direct: bool = False
     task: asyncio.Task | None = None
 
 
@@ -76,7 +79,7 @@ class Chat(discord.Cog):
             return
 
         Log.info(f"Will reply to {message.author.name} ({decision.reason})")
-        self.__schedule(message)
+        self.__schedule(message, decision.direct)
 
     @discord.Cog.listener()
     async def on_typing(self, channel, user, when):
@@ -85,15 +88,16 @@ class Chat(discord.Cog):
         if pending and user.id == pending.message.author.id:
             pending.deadline = min(pending.limit, time.monotonic() + TYPING_EXTEND)
 
-    def __schedule(self, message: discord.Message):
+    def __schedule(self, message: discord.Message, direct: bool):
         config = self.__bot.config
         now = time.monotonic()
         pending = self.__pending.get(message.channel.id)
         if pending:   # elle attendait déjà : on répondra à l'ensemble, après ce message
             pending.message = message
+            pending.direct = pending.direct or direct
             pending.deadline = min(pending.limit, now + config.reply_delay)
             return
-        pending = _Pending(message, now + config.reply_delay, now + config.reply_max_wait)
+        pending = _Pending(message, now + config.reply_delay, now + config.reply_max_wait, direct)
         self.__pending[message.channel.id] = pending
         pending.task = asyncio.create_task(self.__wait_then_reply(pending))
 
@@ -104,17 +108,18 @@ class Chat(discord.Cog):
                 await asyncio.sleep(remaining)
         finally:
             self.__pending.pop(channel_id, None)
-        await self.__reply(pending.message)
+        await self.__reply(pending.message, pending.direct)
 
-    async def __reply(self, message: discord.Message):
+    async def __reply(self, message: discord.Message, direct: bool = False):
         bot = self.__bot
         try:
             reply = await self.speak(message.channel, message.author, reply_to=message,
-                                     query=message.content)
+                                     query=message.content, must_reply=direct)
         except OllamaError as error:
             Log.error(f"Ollama error: {error}")
-            await message.reply("Je n'arrive pas à joindre mon cerveau… Ollama est lancé ?",
-                                mention_author=False)
+            text = "Je n'arrive pas à joindre mon cerveau… Ollama est lancé ?" \
+                if "unreachable" in str(error) else f"⚠️ Problème avec mon cerveau (Ollama) : {error}"
+            await message.reply(text[:2000], mention_author=False)
             return
         except Exception as error:
             Log.error(f"{error}\n{traceback.format_exc()}")
@@ -134,15 +139,19 @@ class Chat(discord.Cog):
     # --- parler -------------------------------------------------------------------
     async def speak(self, channel: discord.abc.Messageable, author: discord.abc.User, *,
                     reply_to: discord.Message | None = None, note: str | None = None,
-                    query: str | None = None, spontaneous: bool = False) -> str | None:
+                    query: str | None = None, spontaneous: bool = False,
+                    must_reply: bool = False) -> str | None:
         """Fait réfléchir/agir Rosalie dans ce salon et envoie sa réponse.
         Retourne le texte envoyé, ou None si elle a choisi le silence.
         `note` : consigne système ajoutée en fin de conversation (relance, réflexion)."""
         bot = self.__bot
         async with self.__locks[channel.id]:
             # Initiative : pas de « écrit… » si elle finit par se taire
-            reply, trace = await self.__think(channel, author, query, note,
-                                              typing=reply_to is not None)
+            reply, trace, errors = await self.__think(channel, author, query, note,
+                                                      typing=reply_to is not None,
+                                                      must_reply=must_reply)
+            if errors:   # une erreur est toujours dite, même si elle comptait se taire
+                reply = "\n\n".join(filter(None, [reply, _errors_footer(errors)]))
 
             if reply is None:
                 Log.info(f"Rosalie choisit de ne rien dire ({place_name(channel)})")
@@ -170,7 +179,8 @@ class Chat(discord.Cog):
             return reply
 
     async def __think(self, channel, author, query: str | None, note: str | None,
-                      typing: bool) -> tuple[str | None, list[dict]]:
+                      typing: bool, must_reply: bool = False
+                      ) -> tuple[str | None, list[dict], list[str]]:
         """Réflexion + outils, puis, si elle a écrit un bloc run-python/run-bash : confirmation
         sur Discord, exécution, et elle reprend avec la sortie (jusqu'à CODE_MAX_RUNS fois)."""
         bot = self.__bot
@@ -184,7 +194,9 @@ class Chat(discord.Cog):
             with_note(messages, note)
         ctx = ToolContext(bot=bot, channel=channel, author=author)
         trace: list[dict] = []
+        errors: list[str] = []
         runs = 0
+        insisted = False
         while True:
             async with channel.typing() if typing else contextlib.nullcontext():
                 result = await run_agent(bot.llm, messages, ctx, max_steps=config.max_tool_steps,
@@ -192,10 +204,23 @@ class Chat(discord.Cog):
             if result.actions:
                 Log.info("Actions: " + " | ".join(result.actions))
             trace += result.trace
+            errors += result.errors
             reply = clean_reply(result.text, bot.user.display_name)
             block = extract_code(reply) if owner and config.code_exec else None
             if block is None or runs >= config.code_max_runs:
-                return (None if is_silence(reply) else reply), trace
+                if not is_silence(reply):
+                    return reply, trace, errors
+                if not must_reply:
+                    return None, trace, errors
+                if insisted:   # elle n'arrive pas à répondre : on le dit plutôt que se taire
+                    Log.warning("Réponse vide malgré une question directe")
+                    return "Désolée, je n'ai pas réussi à formuler de réponse… Tu peux reformuler ?", \
+                        trace, errors
+                insisted = True
+                Log.info("Silence refusé : on lui parle directement, on lui redemande")
+                messages += [{"role": "assistant", "content": reply or SILENCE},
+                             {"role": "user", "content": MUST_REPLY_NOTE}]
+                continue
 
             runs += 1
             if block.before:
@@ -206,7 +231,7 @@ class Chat(discord.Cog):
                 Log.info("Code refusé par l'owner")
                 trace += [{"role": "assistant", "content": reply},
                           {"role": "user", "content": REFUSED_NOTE}]
-                return "D'accord, je ne l'exécute pas.", trace
+                return "D'accord, je ne l'exécute pas.", trace, errors
 
             Log.command(f"run {block.language} ({len(block.code)} caractères)")
             async with channel.typing():
@@ -252,6 +277,18 @@ async def _send(channel, reply: str, reply_to: discord.Message | None) -> discor
     for chunk in chunks[1:]:
         sent = await channel.send(chunk)
     return sent
+
+
+def _errors_footer(errors: list[str]) -> str:
+    unique = list(dict.fromkeys(errors))
+    title = "⚠️ Une action a échoué :" if len(unique) == 1 else f"⚠️ {len(unique)} actions ont échoué :"
+    lines = []
+    for error in unique[:5]:
+        name, _, detail = error.partition(" : ")
+        lines.append(f"- `{name}` : {detail}")
+    if len(unique) > 5:
+        lines.append(f"- … et {len(unique) - 5} autre(s)")
+    return "\n".join([title, *lines])
 
 
 async def _react(message: discord.Message, emoji: str):

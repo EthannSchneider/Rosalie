@@ -1,6 +1,10 @@
 import aiohttp
 
 
+CONTEXT_FULL = ("la conversation ne rentre plus dans la mémoire de travail du modèle : Ollama a "
+                "coupé des messages (augmente OLLAMA_NUM_CTX, ou OLLAMA_CONTEXT_LENGTH sur le serveur)")
+
+
 class OllamaError(Exception):
     pass
 
@@ -44,7 +48,9 @@ class OllamaClient:
         if format:
             payload["format"] = format
         data = await self.__post("/api/chat", payload)
-        return data.get("message", {})
+        message = dict(data.get("message", {}))
+        message["done_reason"] = data.get("done_reason")   # "length" = réponse coupée
+        return message
 
     async def embed(self, texts: list[str], model: str) -> list[list[float]]:
         data = await self.__post("/api/embed", {"model": model, "input": texts,
@@ -55,7 +61,10 @@ class OllamaClient:
         try:
             async with self.__get_session().get(f"{self.base_url}/api/tags") as response:
                 if response.status != 200:
-                    raise OllamaError(f"HTTP {response.status}: {await response.text()}")
+                    text = await response.text()
+                    if "no user query found" in text:
+                        raise OllamaError(CONTEXT_FULL)
+                    raise OllamaError(f"HTTP {response.status}: {text}")
                 data = await response.json()
         except aiohttp.ClientError as error:
             raise OllamaError(f"Ollama unreachable at {self.base_url}: {error}") from error
@@ -71,7 +80,10 @@ class OllamaClient:
                     f"{self.base_url}{path}", json=payload,
                     timeout=timeout or self.__timeout) as response:
                 if response.status != 200:
-                    raise OllamaError(f"HTTP {response.status}: {await response.text()}")
+                    text = await response.text()
+                    if "no user query found" in text:
+                        raise OllamaError(CONTEXT_FULL)
+                    raise OllamaError(f"HTTP {response.status}: {text}")
                 return await response.json()
         except aiohttp.ClientError as error:
             raise OllamaError(f"Ollama unreachable at {self.base_url}: {error}") from error

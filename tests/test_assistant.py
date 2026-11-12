@@ -287,3 +287,96 @@ class LongTermMemoryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ToolErrorsTest(unittest.TestCase):
+    def test_errors_are_collected_and_shown(self):
+        from cogs.rosalie.chat import _errors_footer
+
+        class LLM:
+            def __init__(self):
+                self.replies = [
+                    {"content": "", "tool_calls": [{"function": {"name": "read_messages",
+                                                                 "arguments": {"channel": "inconnu"}}}]},
+                    {"content": "Voilà les messages !"}]
+
+            async def chat_message(self, messages, tools=None):
+                return self.replies.pop(0)
+
+        bot, _, _ = make_bot()
+        bot.config.web_access = True
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
+        result = asyncio.run(run_agent(LLM(), [{"role": "system", "content": "S"}], ctx))
+        self.assertEqual(len(result.errors), 1)
+        self.assertTrue(result.errors[0].startswith("read_messages : Aucun salon"))
+        footer = _errors_footer(result.errors * 2)
+        self.assertTrue(footer.startswith("⚠️ Une action a échoué"))
+        self.assertIn("`read_messages`", footer)
+
+    def test_unknown_id_is_fetched_from_discord(self):
+        bot, bunker, _ = make_bot()
+        thread = FakeChannel(1262590550873264644, "un-fil", bunker)
+        bot.fetch_channel = mock.AsyncMock(return_value=thread)
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
+        asyncio.run(tools.execute(ctx, "send_message", {"channel": "1262590550873264644", "content": "coucou"}))
+        self.assertEqual(thread.sent, ["coucou"])
+
+        bot.fetch_channel = mock.AsyncMock(side_effect=discord.NotFound(
+            SimpleNamespace(status=404, reason="Not Found"), "Unknown Channel"))
+        result = asyncio.run(tools.execute(ctx, "read_messages", {"channel": "1262590550873264644"}))
+        self.assertIn("ne correspond à aucun salon que je peux voir", result)
+
+
+class ContextFitTest(unittest.TestCase):
+    def test_big_tool_results_are_shrunk_first(self):
+        from libs.assistant.agent import fit_context
+        messages = [{"role": "system", "content": "S" * 100},
+                    {"role": "user", "content": "lis les salons"},
+                    {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "read_messages"}}]},
+                    {"role": "tool", "content": "x" * 9000, "tool_name": "read_messages"}]
+        self.assertTrue(fit_context(messages, 3000))
+        self.assertEqual(len(messages), 4)
+        self.assertLess(len(messages[3]["content"]), 3000)
+        self.assertIn("coupé", messages[3]["content"])
+
+    def test_old_history_is_dropped_but_never_the_question(self):
+        from libs.assistant.agent import fit_context
+        messages = [{"role": "system", "content": "S"},
+                    {"role": "user", "content": "vieux " * 400},
+                    {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "x"}}]},
+                    {"role": "tool", "content": "r", "tool_name": "x"},
+                    {"role": "assistant", "content": "ancienne réponse " * 100},
+                    {"role": "user", "content": "la vraie question"}]
+        fit_context(messages, 500)
+        self.assertEqual(messages[0]["content"], "S")
+        self.assertEqual(messages[-1]["content"], "la vraie question")
+        self.assertEqual([m["role"] for m in messages], ["system", "user"])
+
+    def test_truncated_reply_is_flagged(self):
+        class LLM:
+            async def chat_message(self, messages, tools=None):
+                return {"content": "Voici ce que", "done_reason": "length"}
+
+        bot, _, _ = make_bot()
+        bot.config.web_access = True
+        ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
+        result = asyncio.run(run_agent(LLM(), [{"role": "system", "content": "S"},
+                                               {"role": "user", "content": "q"}], ctx))
+        self.assertIn("coupée", result.text)
+
+
+class ListMembersTest(unittest.TestCase):
+    def test_list_members(self):
+        bot, bunker, _ = make_bot()
+        everyone = SimpleNamespace(name="@everyone", is_default=lambda: True)
+        admin = SimpleNamespace(name="Admin", is_default=lambda: False)
+        member = lambda name, display, is_bot=False, roles=(): SimpleNamespace(
+            name=name, display_name=display, bot=is_bot, roles=[everyone, *roles])
+        bunker.members = [member("ethann69", "Senior Ethann", roles=[admin]), member("diogo", "diogo"),
+                          member("rosalie", "Rosalie", is_bot=True)]
+        bunker.member_count = 3
+        ctx = tools.ToolContext(bot=bot, channel=bunker.text_channels[0], author=SimpleNamespace(id=42, name="E"))
+        result = asyncio.run(tools.execute(ctx, "list_members", {}))
+        self.assertIn("2 personne(s), 1 bot(s)", result)
+        self.assertIn("- Senior Ethann (@ethann69) — Admin", result)
+        self.assertIn("Bots : Rosalie", result)

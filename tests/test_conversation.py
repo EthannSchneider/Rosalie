@@ -158,3 +158,15 @@ class SplitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DirectDecisionTest(unittest.TestCase):
+    def test_direct_flag(self):
+        bot_user = SimpleNamespace(id=BOT_ID, display_name="Rosalie")
+        decider = ReplyDecider(make_config(), None, FakeSettings())
+        named = asyncio.run(decider.decide(make_message("Rosalie tu es là ?"), bot_user, []))
+        self.assertTrue(named.direct)
+        dedicated = ReplyDecider(make_config(channel_ids=frozenset({10})), None, FakeSettings())
+        decision = asyncio.run(dedicated.decide(make_message("il fait beau"), bot_user, []))
+        self.assertTrue(decision)
+        self.assertFalse(decision.direct)

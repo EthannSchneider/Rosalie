@@ -15,6 +15,7 @@ class Decision:
     reply: bool
     reason: str
     record: bool = False  # garder le message dans l'historique même sans répondre
+    direct: bool = False  # on lui parle directement (DM, mention, nom, réponse) : elle doit répondre
 
     def __bool__(self):
         return self.reply
@@ -97,14 +98,14 @@ class ReplyDecider:
             return Decision(False, "ignored prefix")
 
         if isinstance(message.channel, discord.DMChannel):
-            return Decision(True, "DM", record=True)
+            return Decision(True, "DM", record=True, direct=True)
         if bot_user in message.mentions:
-            return Decision(True, "mention", record=True)
+            return Decision(True, "mention", record=True, direct=True)
 
         replied_to = await self.__replied_author(message)
         if replied_to is not None:
             if replied_to == bot_user.id:
-                return Decision(True, "reply to Rosalie", record=True)
+                return Decision(True, "reply to Rosalie", record=True, direct=True)
             return Decision(False, "reply to someone else", record=self.is_dedicated(channel_id))
 
         talks_to_someone_else = any(
@@ -112,7 +113,7 @@ class ReplyDecider:
         named = self.__name_regex.search(content) is not None
 
         if named:
-            return Decision(True, "name", record=True)
+            return Decision(True, "name", record=True, direct=True)
         if talks_to_someone_else:
             return Decision(False, "mentions someone else", record=self.is_dedicated(channel_id))
         if self.is_dedicated(channel_id):

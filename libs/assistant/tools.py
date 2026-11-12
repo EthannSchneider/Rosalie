@@ -11,7 +11,7 @@ from typing import Awaitable, Callable
 import discord
 
 from libs.assistant.confirm import ask_confirmation
-from libs.assistant.resolver import (ResolveError, resolve_channel, resolve_guild,
+from libs.assistant.resolver import (ResolveError, _id, resolve_channel, resolve_guild,
                                      resolve_member, resolve_role, resolve_user)
 from libs import web
 from libs.conversation.memory import Entry
@@ -127,6 +127,23 @@ def _int(value, default: int, low: int, high: int) -> int:
         return default
 
 
+async def _channel(ctx: ToolContext, query: str | None, server: str | None = None,
+                   messageable: bool = True):
+    """resolve_channel + repli : un ID absent du cache est demandé à Discord (fils, DM…)."""
+    try:
+        return resolve_channel(ctx.bot, query, ctx.channel, server, messageable=messageable)
+    except ResolveError:
+        channel_id = _id(query) if query else None
+        if not channel_id:
+            raise
+    try:
+        return await ctx.bot.fetch_channel(channel_id)
+    except (discord.NotFound, discord.Forbidden, discord.InvalidData, AttributeError):
+        raise ResolveError(f"l'identifiant {channel_id} ne correspond à aucun salon que je peux "
+                           "voir (c'est peut-être l'ID d'un message ou d'une personne, ou un salon "
+                           "d'un serveur où je ne suis pas). Utilise list_channels.") from None
+
+
 def _remember_sent(ctx: ToolContext, sent: discord.Message, content: str):
     """Le message envoyé par un outil entre dans l'historique du salon de destination :
     si la personne répond, Rosalie sait ce qu'elle lui a écrit et pour qui."""
@@ -163,6 +180,36 @@ async def list_channels(ctx: ToolContext, server: str | None = None) -> str:
     return f"Salons de « {guild.name} » :\n" + "\n".join(lines)
 
 
+@tool("list_members",
+      "Liste les membres d'un serveur Discord (pseudos, rôles, bots). Pour « qui est sur le "
+      "serveur », « qui a le rôle X », « combien on est ».",
+      {"server": ("string", "Nom ou id du serveur (vide = serveur actuel)"),
+       "role": ("string", "Ne garder que les membres qui ont ce rôle (optionnel)")})
+async def list_members(ctx: ToolContext, server: str | None = None, role: str | None = None) -> str:
+    guild = resolve_guild(ctx.bot, server, ctx.guild)
+    members = resolve_role(guild, role).members if role else list(guild.members)
+    if not members and not role and (guild.member_count or 0) > 1:
+        return (f"Je ne vois pas la liste des membres de « {guild.name} » ({guild.member_count} membres) : "
+                "active « Server Members Intent » dans le Developer Portal.")
+    humans = sorted((m for m in members if not m.bot), key=lambda m: m.display_name.lower())
+    bots = sorted((m for m in members if m.bot), key=lambda m: m.display_name.lower())
+
+    def line(member) -> str:
+        roles = [r.name for r in reversed(member.roles) if not r.is_default()][:3]
+        name = member.display_name if member.display_name == member.name \
+            else f"{member.display_name} (@{member.name})"
+        return f"- {name}" + (f" — {', '.join(roles)}" if roles else "")
+
+    header = f"Membres de « {guild.name} »" + (f" avec le rôle {role}" if role else "") + \
+        f" : {len(humans)} personne(s), {len(bots)} bot(s)."
+    lines = [line(m) for m in humans[:80]]
+    if len(humans) > 80:
+        lines.append(f"- … et {len(humans) - 80} autres")
+    if bots:
+        lines.append("Bots : " + ", ".join(b.display_name for b in bots[:20]))
+    return "\n".join([header, *lines])
+
+
 @tool("send_message",
       "Envoie un message dans un salon. Rédige toi-même le texte si on te demande "
       "d'écrire quelque chose. Le salon peut être un nom de salon, un nom de serveur "
@@ -172,7 +219,7 @@ async def list_channels(ctx: ToolContext, server: str | None = None) -> str:
        "server": ("string", "Serveur pour lever une ambiguïté (optionnel)")},
       required=("channel", "content"))
 async def send_message(ctx: ToolContext, channel: str, content: str, server: str | None = None) -> str:
-    target = resolve_channel(ctx.bot, channel, ctx.channel, server)
+    target = await _channel(ctx, channel, server)
     sent = await target.send(content[:2000])
     _remember_sent(ctx, sent, content[:2000])
     where = getattr(target, "name", "DM")
@@ -196,7 +243,7 @@ async def send_dm(ctx: ToolContext, user: str, content: str) -> str:
       {"channel": ("string", "Salon (vide = ici)"),
        "count": ("integer", "Nombre de messages (max 30)")})
 async def read_messages(ctx: ToolContext, channel: str | None = None, count: int = 15) -> str:
-    target = resolve_channel(ctx.bot, channel, ctx.channel)
+    target = await _channel(ctx, channel)
     lines = []
     async for message in target.history(limit=_int(count, 15, 1, 30)):
         lines.append(f"[{message.created_at:%d.%m %H:%M}] {message.author.display_name}: "
@@ -227,7 +274,7 @@ async def create_channel(ctx: ToolContext, name: str, server: str | None = None,
       {"channel": ("string", "Salon à supprimer"), "server": ("string", "Serveur (optionnel)")},
       required=("channel",), confirm="Supprimer le salon « {channel} »")
 async def delete_channel(ctx: ToolContext, channel: str, server: str | None = None) -> str:
-    target = resolve_channel(ctx.bot, channel, ctx.channel, server, messageable=False)
+    target = await _channel(ctx, channel, server, messageable=False)
     name = target.name
     await target.delete(reason=f"Demandé par {ctx.author}")
     return f"Salon #{name} supprimé."
@@ -237,7 +284,7 @@ async def delete_channel(ctx: ToolContext, channel: str, server: str | None = No
       {"channel": ("string", "Salon (vide = ici)"), "count": ("integer", "Nombre (max 100)")},
       required=("count",), confirm="Supprimer les {count} derniers messages de « {channel} »")
 async def purge_messages(ctx: ToolContext, count: int, channel: str | None = None) -> str:
-    target = resolve_channel(ctx.bot, channel, ctx.channel)
+    target = await _channel(ctx, channel)
     deleted = await target.purge(limit=_int(count, 10, 1, 100))
     return f"{len(deleted)} messages supprimés."
 
@@ -400,7 +447,7 @@ MIN_IMAGE_BYTES = 12_000   # en dessous : presque toujours un logo ou une icône
 
 async def _send_images(ctx: ToolContext, images: list[web.DownloadedImage], sources: list[str],
                        caption: str | None, channel: str | None) -> str:
-    target = resolve_channel(ctx.bot, channel, ctx.channel) if channel else ctx.channel
+    target = await _channel(ctx, channel) if channel else ctx.channel
     links = [f"<{url}>" for url in dict.fromkeys(sources) if url]
     content = "\n".join(filter(None, [(caption or "").strip(),
                                       ("Source : " + " ".join(links)) if links else ""]))[:2000]

@@ -100,7 +100,7 @@ class Config:
             decider_model=os.getenv("DECIDER_MODEL") or model,
             embed_model=os.getenv("EMBED_MODEL", "nomic-embed-text"),
             ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
-            num_ctx=int(os.getenv("OLLAMA_NUM_CTX", "8192")),
+            num_ctx=int(os.getenv("OLLAMA_NUM_CTX", "16384")),
             temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.6")),
             history_size=int(os.getenv("HISTORY_SIZE", "30")),
             conversation_timeout=int(os.getenv("CONVERSATION_TIMEOUT", "180")),
