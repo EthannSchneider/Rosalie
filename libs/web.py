@@ -8,6 +8,7 @@ bloquées pour qu'un lien piégé ne puisse pas viser ta machine ou ta box.
 import asyncio
 import html
 import ipaddress
+import json
 import re
 import socket
 from dataclasses import dataclass
@@ -264,3 +265,183 @@ async def fetch(url: str, max_chars: int = 6000, browser=None, mode: str = "auto
     if len(text) > max_chars:
         text = text[:max_chars] + "\n[… page tronquée]"
     return title or url, text
+
+
+# --------------------------------------------------------------------------- images
+
+MAX_IMAGE = 8_000_000   # octets (limite des pièces jointes Discord pour un bot : ~10 Mo)
+IMAGE_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}
+
+
+@dataclass
+class ImageResult:
+    title: str
+    image_url: str          # l'image elle-même
+    page_url: str           # la page où elle a été trouvée (source)
+    thumbnail: str = ""
+    width: int = 0
+    height: int = 0
+
+
+@dataclass
+class DownloadedImage:
+    data: bytes
+    content_type: str
+    url: str
+
+    @property
+    def filename(self) -> str:
+        return "image." + IMAGE_TYPES.get(self.content_type, "jpg")
+
+
+async def _searxng_images(session: aiohttp.ClientSession, base_url: str, query: str,
+                          limit: int) -> list[ImageResult]:
+    async with session.get(f"{base_url.rstrip('/')}/search",
+                           params={"q": query, "format": "json", "categories": "images"}) as response:
+        if response.status != 200:
+            raise WebError(f"SearXNG a répondu HTTP {response.status}")
+        data = await response.json()
+    return [ImageResult(r.get("title", ""), r["img_src"], r.get("url", ""), r.get("thumbnail_src", ""))
+            for r in data.get("results", []) if r.get("img_src")][:limit]
+
+
+async def _brave_images(session: aiohttp.ClientSession, api_key: str, query: str,
+                        limit: int) -> list[ImageResult]:
+    async with session.get("https://api.search.brave.com/res/v1/images/search",
+                           params={"q": query, "count": limit, "safesearch": "strict"},
+                           headers={"X-Subscription-Token": api_key, "Accept": "application/json"}) as response:
+        if response.status != 200:
+            raise WebError(f"Brave Images a répondu HTTP {response.status}")
+        data = await response.json()
+    return [ImageResult(r.get("title", ""), r.get("properties", {}).get("url", ""), r.get("url", ""),
+                        r.get("thumbnail", {}).get("src", ""))
+            for r in data.get("results", []) if r.get("properties", {}).get("url")][:limit]
+
+
+async def _openverse_images(session: aiohttp.ClientSession, query: str, limit: int) -> list[ImageResult]:
+    """Openverse : API officielle, gratuite et sans clé (images sous licence libre)."""
+    async with session.get("https://api.openverse.org/v1/images/",
+                           params={"q": query, "page_size": limit, "mature": "false"}) as response:
+        if response.status != 200:
+            raise WebError(f"Openverse a répondu HTTP {response.status}")
+        data = await response.json(content_type=None)
+    return [ImageResult(r.get("title") or "", r["url"], r.get("foreign_landing_url", ""),
+                        r.get("thumbnail", ""), int(r.get("width") or 0), int(r.get("height") or 0))
+            for r in data.get("results", []) if r.get("url")][:limit]
+
+
+async def _commons_images(session: aiohttp.ClientSession, query: str, limit: int,
+                          contact: str) -> list[ImageResult]:
+    """Wikimedia Commons : leur règle impose un contact dans le User-Agent (WEB_CONTACT)."""
+    params = {"action": "query", "format": "json", "generator": "search",
+              "gsrsearch": f"{query} filetype:bitmap", "gsrnamespace": 6, "gsrlimit": limit,
+              "prop": "imageinfo", "iiprop": "url|mime", "iiurlwidth": 1280}
+    async with session.get("https://commons.wikimedia.org/w/api.php", params=params,
+                           headers={"User-Agent": f"RosalieDiscordBot/1.0 ({contact})"}) as response:
+        if response.status != 200:
+            raise WebError(f"Wikimedia Commons a répondu HTTP {response.status}")
+        data = await response.json(content_type=None)
+    pages = sorted((data.get("query") or {}).get("pages", {}).values(), key=lambda p: p.get("index", 0))
+    results = []
+    for page in pages:
+        info = (page.get("imageinfo") or [{}])[0]
+        url = info.get("thumburl") or info.get("url")
+        if url:
+            results.append(ImageResult(page.get("title", "").removeprefix("File:"), url,
+                                       info.get("descriptionurl", "")))
+    return results[:limit]
+
+
+async def search_images(query: str, limit: int = 5, provider: str = "duckduckgo",
+                        searxng_url: str = "", brave_api_key: str = "",
+                        contact: str = "") -> list[ImageResult]:
+    """Essaie les sources dans l'ordre : celle configurée (Brave / SearXNG), puis Openverse,
+    et Wikimedia Commons si un contact est configuré. Première qui répond gagne.
+    (Repli final côté outil : l'image principale des pages trouvées par la recherche web.)"""
+    sources = []
+    if provider == "brave" and brave_api_key:
+        sources.append(("Brave", lambda s: _brave_images(s, brave_api_key, query, limit)))
+    if provider == "searxng" and searxng_url:
+        sources.append(("SearXNG", lambda s: _searxng_images(s, searxng_url, query, limit)))
+    sources.append(("Openverse", lambda s: _openverse_images(s, query, limit)))
+    if contact:
+        sources.append(("Commons", lambda s: _commons_images(s, query, limit, contact)))
+
+    errors = []
+    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT) as session:
+        for name, source in sources:
+            try:
+                results = await source(session)
+            except (WebError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError) as error:
+                errors.append(f"{name} : {error or type(error).__name__}")
+                continue
+            if results:
+                return results
+            errors.append(f"{name} : aucun résultat")
+    Log.warning("Recherche d'images : " + " | ".join(errors))
+    if all("aucun résultat" in error for error in errors):
+        return []
+    raise WebError("recherche d'images impossible (" + " ; ".join(errors) + ")")
+
+
+_OG_IMAGE = re.compile(
+    r"<meta[^>]+(?:property|name)=[\"'](?:og:image(?::url)?|twitter:image)[\"'][^>]*>", re.IGNORECASE)
+_CONTENT = re.compile(r"content=[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+
+def page_image(html_text: str, base_url: str) -> str | None:
+    """Image principale d'une page (og:image / twitter:image)."""
+    for tag in _OG_IMAGE.findall(html_text):
+        content = _CONTENT.search(tag)
+        if content:
+            return urljoin(base_url, html.unescape(content.group(1)))
+    return None
+
+
+def _image_type(content_type: str, data: bytes) -> str | None:
+    kind = content_type.split(";")[0].strip().lower()
+    if kind in IMAGE_TYPES:
+        return kind
+    signatures = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif"}
+    for signature, guessed in signatures.items():
+        if data.startswith(signature):
+            return guessed
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+async def download_image(url: str, follow_page: bool = True) -> DownloadedImage:
+    """Télécharge une image (réseau local refusé, 8 Mo max). Si l'adresse est une page web,
+    prend son image principale (og:image)."""
+    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT) as session:
+        try:
+            for _ in range(MAX_REDIRECTS + 1):
+                await _check_public(url)   # vérifié à chaque redirection
+                async with session.get(url, allow_redirects=False,
+                                       headers={"Accept": "image/*,text/html;q=0.5"}) as response:
+                    if response.status in (301, 302, 303, 307, 308) and "Location" in response.headers:
+                        url = urljoin(url, response.headers["Location"])
+                        continue
+                    if response.status != 200:
+                        raise WebError(f"l'image a répondu HTTP {response.status}", status=response.status)
+                    content_type = response.headers.get("Content-Type", "")
+                    chunks, size = [], 0
+                    async for chunk in response.content.iter_chunked(65536):
+                        chunks.append(chunk)
+                        size += len(chunk)
+                        if size > MAX_IMAGE:
+                            raise WebError("image trop lourde (plus de 8 Mo)")
+                    data = b"".join(chunks)
+                kind = _image_type(content_type, data)
+                if kind:
+                    return DownloadedImage(data, kind, url)
+                if follow_page and "html" in content_type.lower():
+                    found = page_image(data.decode(response.charset or "utf-8", errors="replace"), url)
+                    if found:
+                        return await download_image(found, follow_page=False)
+                    raise WebError("cette page ne contient pas d'image principale")
+                raise WebError(f"ce n'est pas une image ({content_type or 'type inconnu'})")
+            raise WebError("trop de redirections")
+        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            raise WebError(f"image inaccessible : {error}") from error

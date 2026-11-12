@@ -156,7 +156,7 @@ class Chat(discord.Cog):
 
             dedicated = bot.decider.is_dedicated(channel.id)
             sent = await _send(channel, reply, reply_to=None if dedicated else reply_to)
-            Log.message(channel, reply, bot.user.name, bot.user.name)
+            Log.message(channel, reply, bot.user.name, bot.user.name, recipient=author.name)
             bot.memory.add(channel.id, Entry(
                 author_id=bot.user.id,
                 author_name=bot.user.display_name,

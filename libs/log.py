@@ -38,12 +38,16 @@ class Log():
             pass
 
     @staticmethod
-    def message(channel: discord.abc.Messageable, message: str, author: str, bot: str) -> "Log":
+    def message(channel: discord.abc.Messageable, message: str, author: str, bot: str,
+                recipient: str | None = None) -> "Log":
+        """recipient : la personne avec qui le bot parle en DM. À donner quand c'est le bot
+        qui écrit : py-cord ne connaît pas toujours channel.recipient."""
         import discord
 
         if isinstance(channel, discord.DMChannel):
-            recipient = channel.recipient.name if channel.recipient else author
-            channel_name = bot + " DM with " + recipient
+            if channel.recipient:
+                recipient = channel.recipient.name
+            channel_name = bot + " DM with " + (recipient or author)
         else:
             channel_name = getattr(channel, "name", str(channel))
         return Log("(" + channel_name + ") " + author + ": " + message, LogType.MESSAGE)

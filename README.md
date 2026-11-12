@@ -52,7 +52,14 @@ kick, ban) demandent une **confirmation par bouton**.
 JavaScript (web components, applis React…) sont ouvertes dans un **navigateur virtuel**
 (Chromium headless via Playwright, `libs/browser.py`) : lecture HTTP rapide d'abord, et le
 navigateur seulement si la page est vide ou bloquée (`WEB_BROWSER=auto|always|never`).
-Dans le navigateur aussi, toute requête vers le réseau local est bloquée. Elle cherche d'elle-même pour
+Dans le navigateur aussi, toute requête vers le réseau local est bloquée.
+
+**Photos** : `send_image` cherche des images et les **envoie en fichiers joints** sur Discord
+(avec la source) ; `send_image_url` envoie une image précise ou l'image principale d'une page.
+Sources : Brave / SearXNG si configurés (`WEB_SEARCH_PROVIDER`), puis Openverse (sans clé),
+Wikimedia Commons si `WEB_CONTACT` est rempli, et en dernier recours l'image principale
+(`og:image`) des pages trouvées par la recherche web. Réseau local refusé, 8 Mo max,
+logos/icônes ignorés. Elle cherche d'elle-même pour
 l'actualité, la météo, les prix… et cite ses sources. Les adresses du réseau local
 (localhost, 192.168.x…) sont refusées, et le contenu web est traité comme des données,
 jamais comme des ordres. `WEB_ACCESS=false` pour couper.

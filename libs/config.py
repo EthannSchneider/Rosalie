@@ -70,6 +70,9 @@ class Config:
     reply_delay: float = 2.0           # secondes de calme après ton dernier message / « écrit… »
     reply_max_wait: float = 20.0       # attente maximale avant de répondre quand même
 
+    # Contact mis dans le User-Agent pour les sites qui l'exigent (Wikimedia Commons). Vide = pas utilisé.
+    web_contact: str = ""
+
     # Exécution de code (toujours après confirmation de l'owner sur Discord)
     code_exec: bool = True
     code_timeout: int = 60             # secondes max par exécution
@@ -114,6 +117,7 @@ class Config:
             public_cooldown=int(os.getenv("PUBLIC_COOLDOWN", "5")),
             reply_delay=float(os.getenv("REPLY_DELAY", "2")),
             reply_max_wait=float(os.getenv("REPLY_MAX_WAIT", "20")),
+            web_contact=os.getenv("WEB_CONTACT", "").strip(),
             code_exec=_bool("CODE_EXEC", True),
             code_timeout=int(os.getenv("CODE_TIMEOUT", "60")),
             code_max_runs=int(os.getenv("CODE_MAX_RUNS", "3")),
