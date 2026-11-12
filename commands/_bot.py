@@ -5,6 +5,7 @@ import discord
 
 from libs.browser import VirtualBrowser
 from libs.config import ROOT_DIR, Config
+from libs.conversation.agenda import Agenda
 from libs.conversation.decider import ReplyDecider
 from libs.conversation.memory import ConversationMemory
 from libs.dataset.store import DatasetStore
@@ -51,6 +52,7 @@ def build_bot(config: Config) -> discord.Bot:
         keep_alive=config.ollama_keep_alive,
         options={"num_ctx": config.num_ctx, "temperature": config.temperature},
     )
+    bot.agenda = Agenda(config.storage_dir / "agenda.json")
     bot.memory = ConversationMemory(config.storage_dir / "memory", config.history_size)
     bot.long_term = LongTermMemory(config.storage_dir / "long_term.sqlite3", bot.llm, config.embed_model)
     bot.dataset = DatasetStore(config.storage_dir / "dataset" / "samples.jsonl")

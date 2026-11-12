@@ -66,6 +66,24 @@ class Config:
     public_replies: bool = True
     public_cooldown: int = 5           # secondes minimum entre deux réponses à une même personne
 
+    # Rythme : attendre que tu aies fini d'écrire avant de répondre
+    reply_delay: float = 2.0           # secondes de calme après ton dernier message / « écrit… »
+    reply_max_wait: float = 20.0       # attente maximale avant de répondre quand même
+
+    # Exécution de code (toujours après confirmation de l'owner sur Discord)
+    code_exec: bool = True
+    code_timeout: int = 60             # secondes max par exécution
+    code_max_runs: int = 3             # exécutions max enchaînées pour une même demande
+
+    # Heartbeat : relances programmées et initiative (écrire d'elle-même)
+    heartbeat: bool = True
+    heartbeat_interval: int = 60       # secondes entre deux battements
+    initiative: bool = True            # valeur par défaut (modifiable avec /rosalie initiative)
+    initiative_every: int = 45         # minutes entre deux moments de réflexion
+    initiative_min_silence: int = 60   # minutes de calme dans la conversation avant d'écrire d'elle-même
+    initiative_max_per_day: int = 3
+    quiet_hours: str = "23-8"          # jamais d'initiative pendant ces heures (vide = aucune)
+
     @classmethod
     def from_env(cls) -> "Config":
         model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
@@ -94,4 +112,16 @@ class Config:
             storage_dir=_path("STORAGE_DIR", "storages"),
             public_replies=_bool("PUBLIC_REPLIES", True),
             public_cooldown=int(os.getenv("PUBLIC_COOLDOWN", "5")),
+            reply_delay=float(os.getenv("REPLY_DELAY", "2")),
+            reply_max_wait=float(os.getenv("REPLY_MAX_WAIT", "20")),
+            code_exec=_bool("CODE_EXEC", True),
+            code_timeout=int(os.getenv("CODE_TIMEOUT", "60")),
+            code_max_runs=int(os.getenv("CODE_MAX_RUNS", "3")),
+            heartbeat=_bool("HEARTBEAT", True),
+            heartbeat_interval=int(os.getenv("HEARTBEAT_INTERVAL", "60")),
+            initiative=_bool("INITIATIVE", True),
+            initiative_every=int(os.getenv("INITIATIVE_EVERY", "45")),
+            initiative_min_silence=int(os.getenv("INITIATIVE_MIN_SILENCE", "60")),
+            initiative_max_per_day=int(os.getenv("INITIATIVE_MAX_PER_DAY", "3")),
+            quiet_hours=os.getenv("QUIET_HOURS", "23-8"),
         )

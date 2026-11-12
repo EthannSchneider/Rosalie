@@ -18,17 +18,21 @@ cogs/
   reload.py                  /reload
   rosalie/chat.py             écoute, fait agir l'agent, répond, prend des notes
   rosalie/admin.py            /rosalie status|model|here|reset|stop|persona|memories|forget
+  rosalie/heartbeat.py        ❤️ battement régulier : relances programmées + initiative
   rosalie/training.py         ⭐ et « Corriger (Rosalie) » → exemples de fine-tuning
 libs/
   assistant/agent.py         boucle LLM ⇄ outils
   assistant/tools.py         les actions Discord + mémoire (ajoute les tiennes ici)
   assistant/resolver.py      « Le bunker » / #salon / @membre → objets Discord
-  assistant/confirm.py       boutons Confirmer/Annuler pour les actions dangereuses
+  assistant/confirm.py       boutons Confirmer/Annuler (actions dangereuses, code à exécuter)
+  assistant/code_runner.py   exécution du code qu'elle écrit (```run-python / ```run-bash)
   web.py                     recherche web + lecture de pages (accès internet)
   browser.py                 navigateur virtuel Chromium pour les pages en JavaScript
   memory/long_term.py        mémoire long terme (SQLite + embeddings)
   memory/extractor.py        prise de notes automatique après chaque échange
   conversation/decider.py    « dois-je répondre ? »
+  conversation/agenda.py     relances programmées + état de l'initiative (storages/agenda.json)
+  conversation/initiative.py silence, heures calmes, « puis-je écrire d'elle-même ? »
   conversation/memory.py     historique court terme par salon
   conversation/prompt.py     prompt système (persona + contexte + souvenirs)
   llm/ollama.py              client async Ollama (chat, outils, embeddings)
@@ -71,6 +75,37 @@ async def pin_message(ctx: ToolContext, message_id: str) -> str:
 3. **Salon dédié** (`/rosalie here`) : à tous tes messages.
 4. **Conversation en cours** : pendant `CONVERSATION_TIMEOUT` s, elle te suit sans être nommée ;
    un petit appel LLM OUI/NON tranche les cas ambigus. `/rosalie stop` pour couper.
+
+## Exécuter du code
+
+Quand tu lui demandes quelque chose, elle peut écrire du code dans un bloc ` ```run-python `
+(ou ` ```run-bash `). Le bot t'envoie ce code sur Discord avec **Exécuter / Annuler** ; rien ne
+tourne sans ton clic. La sortie s'affiche sous le code, elle la lit et te répond (ou corrige et
+repropose, max `CODE_MAX_RUNS` fois). Ça passe par le texte, pas par les outils : ça marche
+même si le modèle gère mal le function calling.
+
+- dossier de travail : `storages/workspace` ; délai max `CODE_TIMEOUT` s (processus tué après) ;
+- les tokens / clés du `.env` sont retirés de l'environnement du code ;
+- un bloc ` ```python ` normal est juste affiché, jamais exécuté ; owners uniquement ;
+- `CODE_EXEC=false` pour couper. ⚠️ Le code tourne avec tes droits (dans le conteneur en Docker).
+
+## Plus qu'un répondeur : initiative et heartbeat
+
+- **Elle attend que tu aies fini** : après ton message, elle patiente `REPLY_DELAY` s (plus
+  longtemps si tu es en train d'écrire, max `REPLY_MAX_WAIT` s) et répond à l'ensemble.
+- **Elle peut se taire** : si ton message n'appelle pas de réponse, elle répond `[SILENCE]` et
+  rien n'est envoyé (un ✅ si elle a quand même agi).
+- **Elle peut parler en plusieurs temps** : outil `say` → « je regarde ça » tout de suite,
+  puis le résultat quand elle a fini.
+- **Elle peut revenir plus tard** : outil `plan_followup` (rappel, prendre des nouvelles,
+  relancer, réponse plus réfléchie). Au moment venu, elle décide encore si c'est utile.
+  `/rosalie agenda`, `/rosalie cancel <id>`.
+- **Heartbeat** (`HEARTBEAT_INTERVAL`, 60 s) : déclenche les relances, et toutes les
+  `INITIATIVE_EVERY` min, si vous n'avez pas parlé depuis `INITIATIVE_MIN_SILENCE` min,
+  elle a un *moment de réflexion* dans ta dernière conversation : elle t'écrit d'elle-même
+  si elle a une vraie raison, sinon silence. Jamais pendant `QUIET_HOURS`, max
+  `INITIATIVE_MAX_PER_DAY` par jour, et jamais deux fois de suite sans réponse de ta part.
+  `/rosalie initiative false` pour couper.
 
 ## Mémoire
 

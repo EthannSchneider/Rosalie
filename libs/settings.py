@@ -36,6 +36,16 @@ class Settings:
         return enabled
 
     @property
+    def initiative(self) -> bool | None:
+        """None = valeur du .env (INITIATIVE)."""
+        return self.__data.get("initiative")
+
+    @initiative.setter
+    def initiative(self, value: bool | None):
+        self.__data["initiative"] = value
+        self.__save()
+
+    @property
     def model(self) -> str | None:
         return self.__data.get("model")
 

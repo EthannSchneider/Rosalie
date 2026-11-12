@@ -49,6 +49,11 @@ class Admin(discord.Cog):
         embed.add_field(name="Historique ici", value=f"{len(bot.memory.get(channel_id))} messages")
         embed.add_field(name="Souvenirs", value=str(bot.long_term.count()))
         embed.add_field(name="Exemples d'entraînement", value=str(bot.dataset.count()))
+        initiative = bot.settings.initiative
+        initiative = bot.config.initiative if initiative is None else initiative
+        embed.add_field(name="Heartbeat", value="actif" if bot.config.heartbeat else "coupé")
+        embed.add_field(name="Initiative", value="oui" if initiative else "non")
+        embed.add_field(name="Relances prévues", value=str(len(bot.agenda.pending())))
         await ctx.respond(embed=embed, ephemeral=True)
 
     @rosalie.command(name="model", description="Changer le modèle Ollama utilisé")
@@ -77,7 +82,27 @@ class Admin(discord.Cog):
         self.__bot.decider.stop(ctx.channel.id)
         await ctx.respond("D'accord, je me tais jusqu'à ce que tu m'appelles.", ephemeral=True)
 
-    @rosalie.command(name="persona", description="Recharger le fichier de personnalité")
+    @rosalie.command(name="agenda", description="Voir ses relances programmées")
+    async def agenda(self, ctx: discord.ApplicationContext):
+        followups = self.__bot.agenda.pending()
+        text = "\n".join(f.line() for f in followups) or "Aucune relance prévue."
+        await ctx.respond(text[:2000], ephemeral=True)
+
+    @rosalie.command(name="cancel", description="Annuler une relance programmée")
+    async def cancel(self, ctx: discord.ApplicationContext,
+                     followup_id: discord.Option(int, "Numéro de la relance (#id)")):
+        done = self.__bot.agenda.cancel(followup_id)
+        await ctx.respond("Relance annulée." if done else "Cette relance n'existe pas.", ephemeral=True)
+
+    @rosalie.command(name="initiative", description="Lui permettre (ou non) de t'écrire d'elle-même")
+    async def initiative(self, ctx: discord.ApplicationContext,
+                         enabled: discord.Option(bool, "Activer l'initiative")):
+        self.__bot.settings.initiative = enabled
+        await ctx.respond("Je t'écrirai de moi-même quand j'en aurai envie." if enabled
+                          else "D'accord, je ne t'écrirai plus de moi-même (les relances "
+                               "programmées restent).", ephemeral=True)
+
+    @rosalie.command(name="persona",description="Recharger le fichier de personnalité")
     async def persona(self, ctx: discord.ApplicationContext):
         text = self.__bot.persona.reload()
         await ctx.respond(f"Personnalité rechargée ({len(text)} caractères).", ephemeral=True)

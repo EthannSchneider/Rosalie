@@ -16,6 +16,7 @@ class Entry:
     # Appels d'outils faits avant cette réponse (ce qui a vraiment été envoyé, à qui…)
     tool_messages: list[dict] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
+    spontaneous: bool = False  # message écrit de sa propre initiative (personne ne lui avait parlé)
 
 
 class ConversationMemory:

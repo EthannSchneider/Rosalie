@@ -2,6 +2,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
+from libs.assistant.code_runner import extract_code
 from libs.assistant.tools import TOOLS, ToolContext, execute, schemas
 from libs.llm.ollama import OllamaClient
 from libs.log import Log
@@ -54,9 +55,10 @@ def _inline_tool_calls(content: str) -> list[dict]:
 
 
 async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
-                    max_steps: int = 6) -> AgentResult:
+                    max_steps: int = 6, acted: bool = False) -> AgentResult:
     """Boucle « le modèle appelle des outils -> on lui renvoie les résultats »
-    jusqu'à ce qu'il produise une réponse finale en texte."""
+    jusqu'à ce qu'il produise une réponse finale en texte.
+    acted=True : une action a déjà eu lieu (code exécuté) -> pas de soupçon de mensonge."""
     actions: list[str] = []
     trace: list[dict] = []
     tools = schemas(getattr(ctx.bot.config, "web_access", True), guest=not ctx.is_owner)
@@ -65,19 +67,21 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
         message = await llm.chat_message(messages, tools=tools)
         content = message.get("content", "") or ""
         calls = message.get("tool_calls") or _inline_tool_calls(content)
+        if not calls and extract_code(content):
+            return AgentResult(content.strip(), actions, trace)   # code à faire confirmer
         if not calls:
             nudge = None
             if not nudged and ctx.is_owner:
                 if _ANNOUNCES_ACTION.search(content.strip()):
                     nudge = NUDGE
-                elif not actions and _CLAIMS_ACTION.search(content):
+                elif not actions and not acted and _CLAIMS_ACTION.search(content):
                     nudge = CLAIM_NUDGE
             if nudge:
                 nudged = True
                 messages += [{"role": "assistant", "content": content},
                              {"role": "user", "content": nudge}]
                 continue
-            if not actions and _CLAIMS_ACTION.search(content):
+            if not actions and not acted and _CLAIMS_ACTION.search(content):
                 Log.warning("Le modèle prétend avoir agi sans appeler d'outil")
                 content += "\n\n⚠️ (Aucune action n'a réellement été effectuée.)"
             return AgentResult(content.strip(), actions, trace)
