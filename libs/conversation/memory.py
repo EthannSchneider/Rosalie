@@ -7,7 +7,7 @@ from pathlib import Path
 
 @dataclass
 class Entry:
-    author_id: int
+    author_id: int | str
     author_name: str
     content: str
     is_bot: bool
@@ -20,58 +20,67 @@ class Entry:
 
 
 class ConversationMemory:
-    """Historique court terme par salon (fenêtre glissante), persisté en JSON."""
+    """Historique court terme par conversation (fenêtre glissante), persisté en JSON.
+    Une conversation = sa clé « interface:id » (ex : « discord:123 », « terminal:local »)."""
 
     def __init__(self, directory: Path, max_size: int = 30):
         self.__directory = directory
         self.__max_size = max_size
-        self.__channels: dict[int, deque[Entry]] = {}
+        self.__channels: dict[str, deque[Entry]] = {}
 
-    def __file(self, channel_id: int) -> Path:
-        return self.__directory / f"{channel_id}.json"
+    def __file(self, key: str) -> Path:
+        return self.__directory / f"{str(key).replace(':', '_')}.json"
 
-    def __load(self, channel_id: int) -> deque[Entry]:
-        if channel_id not in self.__channels:
+    def __legacy(self, key: str) -> Path | None:
+        """Ancien format : un salon Discord stocké sous « <id>.json »."""
+        interface, _, native_id = str(key).partition(":")
+        return self.__directory / f"{native_id}.json" if interface == "discord" else None
+
+    def __load(self, key: str) -> deque[Entry]:
+        if key not in self.__channels:
             entries: deque[Entry] = deque(maxlen=self.__max_size)
-            path = self.__file(channel_id)
+            path = self.__file(key)
+            legacy = self.__legacy(key)
+            if not path.exists() and legacy is not None and legacy.exists():
+                legacy.rename(path)
             if path.exists():
                 try:
                     for raw in json.loads(path.read_text(encoding="utf-8")):
                         entries.append(Entry(**raw))
                 except (json.JSONDecodeError, TypeError):
                     pass
-            self.__channels[channel_id] = entries
-        return self.__channels[channel_id]
+            self.__channels[key] = entries
+        return self.__channels[key]
 
-    def __save(self, channel_id: int):
+    def __save(self, key: str):
         self.__directory.mkdir(parents=True, exist_ok=True)
-        data = [asdict(entry) for entry in self.__channels.get(channel_id, [])]
-        self.__file(channel_id).write_text(
+        data = [asdict(entry) for entry in self.__channels.get(key, [])]
+        self.__file(key).write_text(
             json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
-    def add(self, channel_id: int, entry: Entry):
-        self.__load(channel_id).append(entry)
-        self.__save(channel_id)
+    def add(self, key: str, entry: Entry):
+        self.__load(key).append(entry)
+        self.__save(key)
 
-    def get(self, channel_id: int) -> list[Entry]:
-        return list(self.__load(channel_id))
+    def get(self, key: str) -> list[Entry]:
+        return list(self.__load(key))
 
-    def before(self, channel_id: int, message_id: int) -> tuple[list[Entry], Entry | None]:
+    def before(self, key: str, message_id: int) -> tuple[list[Entry], Entry | None]:
         """Retourne (contexte avant le message, l'entrée du message)."""
-        entries = self.get(channel_id)
+        entries = self.get(key)
         for index, entry in enumerate(entries):
             if entry.message_id == message_id:
                 return entries[:index], entry
         return entries, None
 
-    def replace_content(self, channel_id: int, message_id: int, content: str) -> bool:
-        for entry in self.__load(channel_id):
+    def replace_content(self, key: str, message_id: int, content: str) -> bool:
+        for entry in self.__load(key):
             if entry.message_id == message_id:
                 entry.content = content
-                self.__save(channel_id)
+                self.__save(key)
                 return True
         return False
 
-    def clear(self, channel_id: int):
-        self.__channels[channel_id] = deque(maxlen=self.__max_size)
-        self.__file(channel_id).unlink(missing_ok=True)
+    def clear(self, key: str):
+        self.__channels[key] = deque(maxlen=self.__max_size)
+        self.__file(key).unlink(missing_ok=True)

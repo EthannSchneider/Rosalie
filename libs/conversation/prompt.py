@@ -8,13 +8,14 @@ DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
 def build_system_prompt(persona: str, bot_name: str, place: str,
                         speaker: str | None = None,
-                        servers: list[str] | None = None,
+                        context: list[str] | None = None,
                         memories: list[str] | None = None,
                         nothing_related: bool = False,
                         guest: bool = False,
                         web: bool = True,
                         followups: list[str] | None = None,
                         code_env: str | None = None,
+                        via: str = "Discord",
                         now: datetime.datetime | None = None) -> str:
     """guest=True : la personne n'est pas un owner -> simple discussion, sans actions
     ni souvenirs (rien de privé ne doit fuiter)."""
@@ -26,7 +27,7 @@ def build_system_prompt(persona: str, bot_name: str, place: str,
         "- Prochains jours : " + ", ".join(
             f"{DAYS[day.weekday()]} {day:%d.%m}"
             for day in (now + datetime.timedelta(days=offset) for offset in range(1, 8))) + ".",
-        f"- Tu es {bot_name}, tu parles sur Discord ({place}).",
+        f"- Tu es {bot_name}, tu parles via {via} ({place}).",
     ]
     if guest:
         parts += [
@@ -48,12 +49,11 @@ def build_system_prompt(persona: str, bot_name: str, place: str,
         return "\n".join(parts)
     if speaker:
         parts.append(f"- Tu parles avec {speaker}, ton créateur.")
-    if servers:
-        parts.append(f"- Serveurs où tu es présente : {', '.join(servers)}.")
+    parts += [f"- {line}" for line in context or []]
     parts += [
         "",
         "## Agir",
-        "- Pour agir sur Discord, appelle un outil. Ne prétends JAMAIS avoir fait une action "
+        "- Pour agir (Discord, mémoire, internet…), appelle un outil. Ne prétends JAMAIS avoir fait une action "
         "sans avoir appelé l'outil et reçu son résultat.",
         "- Si on te demande d'écrire un message, rédige-le toi-même puis envoie-le avec send_message "
         "(salon) ou send_dm (message privé à une personne). Ne l'écris pas seulement dans ta réponse : "

@@ -1,14 +1,14 @@
 import discord
 
 from libs.log import Log
-from libs.utils.permissions import is_owner
+from interfaces.discord.utils import is_owner
 
 
 class Reload(discord.Cog):
     def __init__(self, bot: discord.Bot):
         self.__bot = bot
 
-    @discord.slash_command(name="reload", description="Recharger tous les cogs")
+    @discord.slash_command(name="reload", description="Recharger les commandes Discord")
     async def reload(self, ctx: discord.ApplicationContext):
         Log.command(ctx.author.name + " is launching reload command")
         if not await is_owner(self.__bot, ctx.author):
@@ -16,8 +16,8 @@ class Reload(discord.Cog):
             return
         for extension in list(self.__bot.extensions):
             self.__bot.reload_extension(extension)
-        Log.info("Reloaded all cogs from " + str(self.__bot.user))
-        await ctx.respond("Reloaded all cogs", ephemeral=True)
+        Log.info("Reloaded all Discord cogs from " + str(self.__bot.user))
+        await ctx.respond("Commandes Discord rechargées.", ephemeral=True)
 
 
 def setup(bot):

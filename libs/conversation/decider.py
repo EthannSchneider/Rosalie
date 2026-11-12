@@ -2,9 +2,8 @@ import re
 import time
 from dataclasses import dataclass
 
-import discord
-
 from libs.config import Config
+from libs.core.types import Incoming
 from libs.conversation.memory import Entry
 from libs.llm.ollama import OllamaClient, OllamaError
 from libs.log import Log
@@ -22,7 +21,7 @@ class Decision:
 
 
 JUDGE_PROMPT = (
-    "Tu analyses une conversation Discord. {name} est une assistante IA présente dans le salon.\n"
+    "Tu analyses une conversation de groupe. {name} est une assistante IA qui y participe.\n"
     "Réponds UNIQUEMENT par OUI ou NON.\n"
     "OUI si le dernier message s'adresse à {name}, continue la discussion avec {name}, "
     "ou attend clairement une réaction de {name}.\n"
@@ -32,13 +31,14 @@ JUDGE_PROMPT = (
 
 
 class ReplyDecider:
-    """Décide si Rosalie doit répondre à un message.
+    """Décide si Rosalie doit répondre à un message, quelle que soit l'interface.
 
     Ordre des règles (de la moins chère à la plus chère) :
-      1. filtres durs : bots, préfixes ignorés, non-owners si PUBLIC_REPLIES=false
+      1. filtres durs : préfixes ignorés, message vide, non-owners si PUBLIC_REPLIES=false
          (les non-owners ont droit à la discussion seulement, avec un délai anti-spam)
-      2. signaux explicites : DM, @mention, réponse à un de ses messages, son nom
-      3. salon dédié : répond à tout (sauf si on parle clairement à quelqu'un d'autre)
+      2. signaux directs : tête-à-tête (DM, terminal), @mention, réponse à un de ses messages,
+         son nom → elle DOIT répondre (direct=True)
+      3. conversation dédiée : répond à tout (sauf si on parle clairement à quelqu'un d'autre)
       4. conversation en cours avec cette personne (< CONVERSATION_TIMEOUT s) :
          un petit appel LLM « OUI/NON » tranche les cas ambigus
     """
@@ -47,105 +47,79 @@ class ReplyDecider:
         self.__config = config
         self.__llm = llm
         self.__settings = settings
-        self.__active: dict[tuple[int, int], float] = {}
-        self.__guest_replies: dict[int, float] = {}
+        self.__active: dict[tuple[str, str], float] = {}
+        self.__guest_replies: dict[str, float] = {}
         names = "|".join(re.escape(name) for name in config.names)
         self.__name_regex = re.compile(rf"(?<!\w)({names})(?!\w)", re.IGNORECASE)
 
-    # --- état des conversations -------------------------------------------
-    def mark_active(self, channel_id: int, user_id: int):
-        self.__active[(channel_id, user_id)] = time.time()
+    # --- état des conversations (clés « interface:id ») ----------------------------------
+    def mark_active(self, conversation: str, person: str):
+        self.__active[(conversation, person)] = time.time()
 
-    def is_active(self, channel_id: int, user_id: int) -> bool:
-        last = self.__active.get((channel_id, user_id))
+    def is_active(self, conversation: str, person: str) -> bool:
+        last = self.__active.get((conversation, person))
         return last is not None and time.time() - last < self.__config.conversation_timeout
 
-    def stop(self, channel_id: int):
-        for key in [key for key in self.__active if key[0] == channel_id]:
+    def stop(self, conversation: str):
+        for key in [key for key in self.__active if key[0] == conversation]:
             del self.__active[key]
 
-    def is_dedicated(self, channel_id: int) -> bool:
-        return channel_id in self.__config.channel_ids or channel_id in self.__settings.channel_ids
+    def is_dedicated(self, conversation: str) -> bool:
+        return conversation in self.__config.dedicated or conversation in self.__settings.dedicated
 
-    # --- décision ----------------------------------------------------------
-    def is_owner(self, user_id: int) -> bool:
-        return user_id in self.__config.owner_ids
-
-    async def decide(self, message: discord.Message, bot_user: discord.ClientUser,
-                     history: list[Entry]) -> Decision:
-        decision = await self.__decide(message, bot_user, history)
-        if decision and not self.is_owner(message.author.id):
+    # --- décision ----------------------------------------------------------------------
+    async def decide(self, incoming: Incoming, history: list[Entry]) -> Decision:
+        decision = await self.__decide(incoming, history)
+        if decision and not incoming.author.is_owner:
             now = time.time()
-            last = self.__guest_replies.get(message.author.id, 0)
-            if now - last < self.__config.public_cooldown:
+            key = incoming.author.key
+            if now - self.__guest_replies.get(key, 0) < self.__config.public_cooldown:
                 return Decision(False, "guest cooldown", record=decision.record)
-            self.__guest_replies[message.author.id] = now
+            self.__guest_replies[key] = now
         return decision
 
-    async def __decide(self, message: discord.Message, bot_user: discord.ClientUser,
-                       history: list[Entry]) -> Decision:
+    async def __decide(self, incoming: Incoming, history: list[Entry]) -> Decision:
         config = self.__config
-        content = message.content.strip()
-        channel_id = message.channel.id
+        content = incoming.text.strip()
+        conversation = incoming.conversation.key
+        dedicated = self.is_dedicated(conversation)
 
-        if message.author.bot:
-            return Decision(False, "author is a bot")
-        if not self.is_owner(message.author.id) and not config.public_replies:
+        if not incoming.author.is_owner and not config.public_replies:
             return Decision(False, "not an owner")
-        if not content and not message.attachments:
+        if not content and not incoming.has_attachments and not incoming.mentioned:
             return Decision(False, "empty message")
         if content.startswith(config.ignore_prefixes):
             return Decision(False, "ignored prefix")
 
-        if isinstance(message.channel, discord.DMChannel):
-            return Decision(True, "DM", record=True, direct=True)
-        if bot_user in message.mentions:
+        if incoming.conversation.private:
+            return Decision(True, "private", record=True, direct=True)
+        if incoming.mentioned:
             return Decision(True, "mention", record=True, direct=True)
-
-        replied_to = await self.__replied_author(message)
-        if replied_to is not None:
-            if replied_to == bot_user.id:
-                return Decision(True, "reply to Rosalie", record=True, direct=True)
-            return Decision(False, "reply to someone else", record=self.is_dedicated(channel_id))
-
-        talks_to_someone_else = any(
-            user.id != bot_user.id for user in message.mentions)
-        named = self.__name_regex.search(content) is not None
-
-        if named:
+        if incoming.reply_to_bot is True:
+            return Decision(True, "reply to Rosalie", record=True, direct=True)
+        if incoming.reply_to_bot is False:
+            return Decision(False, "reply to someone else", record=dedicated)
+        if self.__name_regex.search(content):
             return Decision(True, "name", record=True, direct=True)
-        if talks_to_someone_else:
-            return Decision(False, "mentions someone else", record=self.is_dedicated(channel_id))
-        if self.is_dedicated(channel_id):
-            return Decision(True, "dedicated channel", record=True)
-        if self.is_active(channel_id, message.author.id):
+        if incoming.mentions_other:
+            return Decision(False, "mentions someone else", record=dedicated)
+        if dedicated:
+            return Decision(True, "dedicated", record=True)
+        if self.is_active(conversation, incoming.author.key):
             if not config.use_llm_decider:
                 return Decision(True, "active conversation", record=True)
-            wants = await self.__ask_judge(bot_user.display_name, history, message)
+            wants = await self.__ask_judge(self.__config.names[0].capitalize(), history, incoming)
             return Decision(wants, f"active conversation, judge={'OUI' if wants else 'NON'}",
                             record=True)
         return Decision(False, "not addressed")
 
-    async def __replied_author(self, message: discord.Message) -> int | None:
-        reference = message.reference
-        if reference is None or reference.message_id is None:
-            return None
-        resolved = reference.resolved
-        if isinstance(resolved, discord.Message):
-            return resolved.author.id
-        try:
-            original = await message.channel.fetch_message(reference.message_id)
-            return original.author.id
-        except discord.HTTPException:
-            return None
-
     async def __ask_judge(self, bot_name: str, history: list[Entry],
-                          message: discord.Message) -> bool:
+                          incoming: Incoming) -> bool:
         transcript = "\n".join(
             f"{bot_name if entry.is_bot else entry.author_name}: {entry.content}"
             for entry in history[-8:])
         prompt = (f"Conversation récente :\n{transcript}\n\n"
-                  f"Dernier message — {message.author.display_name}: {message.content}\n\n"
+                  f"Dernier message — {incoming.author.display_name}: {incoming.text}\n\n"
                   f"{bot_name} doit-elle répondre ? (OUI/NON)")
         try:
             answer = await self.__llm.chat(

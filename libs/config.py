@@ -30,9 +30,9 @@ def _path(name: str, default: str) -> Path:
 
 @dataclass(frozen=True)
 class Config:
-    # Les seules personnes à qui Rosalie obéit
+    # Les seules personnes à qui Rosalie obéit sur Discord (le terminal local est toujours owner)
     owner_ids: frozenset[int]
-    channel_ids: frozenset[int]        # salons où Rosalie répond à tout
+    channel_ids: frozenset[int]        # salons Discord où Rosalie répond à tout
     names: tuple[str, ...]             # noms qui la « réveillent » dans un message
     ignore_prefixes: tuple[str, ...]   # messages à ignorer
 
@@ -50,6 +50,7 @@ class Config:
     conversation_timeout: int
     use_llm_decider: bool
     max_tool_steps: int
+    progress_every: int
 
     # Internet
     web_access: bool
@@ -69,6 +70,9 @@ class Config:
     # Rythme : attendre que tu aies fini d'écrire avant de répondre
     reply_delay: float = 2.0           # secondes de calme après ton dernier message / « écrit… »
     reply_max_wait: float = 20.0       # attente maximale avant de répondre quand même
+
+    # Interfaces lancées par `python bot.py` (voir interfaces/__init__.py)
+    interfaces: tuple[str, ...] = ("discord",)
 
     # Contact mis dans le User-Agent pour les sites qui l'exigent (Wikimedia Commons). Vide = pas utilisé.
     web_contact: str = ""
@@ -90,6 +94,11 @@ class Config:
     initiative_max_per_day: int = 3
     quiet_hours: str = "23-8"          # jamais d'initiative pendant ces heures (vide = aucune)
 
+    @property
+    def dedicated(self) -> frozenset[str]:
+        """Conversations dédiées venant du .env, en clés « interface:id »."""
+        return frozenset(f"discord:{channel_id}" for channel_id in self.channel_ids)
+
     @classmethod
     def from_env(cls) -> "Config":
         model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
@@ -108,7 +117,8 @@ class Config:
             history_size=int(os.getenv("HISTORY_SIZE", "30")),
             conversation_timeout=int(os.getenv("CONVERSATION_TIMEOUT", "180")),
             use_llm_decider=_bool("USE_LLM_DECIDER", True),
-            max_tool_steps=int(os.getenv("MAX_TOOL_STEPS", "6")),
+            max_tool_steps=int(os.getenv("MAX_TOOL_STEPS", "50")),     # 0 = illimité
+            progress_every=int(os.getenv("PROGRESS_EVERY", "6")),      # 0 = pas de point d'étape
             web_access=_bool("WEB_ACCESS", True),
             web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "duckduckgo").lower(),
             searxng_url=os.getenv("SEARXNG_URL", ""),
@@ -121,6 +131,7 @@ class Config:
             reply_delay=float(os.getenv("REPLY_DELAY", "2")),
             reply_max_wait=float(os.getenv("REPLY_MAX_WAIT", "20")),
             web_contact=os.getenv("WEB_CONTACT", "").strip(),
+            interfaces=tuple(name.lower() for name in _list("INTERFACES", "discord")),
             disabled_tools=_list("DISABLED_TOOLS", ""),
             code_exec=_bool("CODE_EXEC", True),
             code_timeout=int(os.getenv("CODE_TIMEOUT", "60")),

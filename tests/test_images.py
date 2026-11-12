@@ -5,6 +5,7 @@ from unittest import mock
 
 from libs import web
 from libs.assistant import tools
+from tests import helpers
 
 JPEG = b"\xff\xd8\xff" + b"x" * 20_000
 PNG = b"\x89PNG" + b"y" * 20_000
@@ -31,24 +32,9 @@ class ParseTest(unittest.TestCase):
             asyncio.run(web.download_image("http://192.168.1.1/cam.jpg"))
 
 
-class FakeChannel:
-    id = 5
-
-    def __init__(self):
-        self.sent = []
-
-    async def send(self, content=None, files=()):
-        self.sent.append((content, [f.filename for f in files]))
-        return SimpleNamespace(id=1, channel=self)
-
-
 def make_ctx(author_id=42):
-    config = SimpleNamespace(owner_ids={42}, web_access=True, web_search_provider="duckduckgo",
-                             searxng_url="", brave_api_key="", web_contact="")
-    channel = FakeChannel()
-    ctx = tools.ToolContext(bot=SimpleNamespace(config=config, memory=None), channel=channel,
-                            author=SimpleNamespace(id=author_id))
-    return ctx, channel
+    ctx = helpers.make_ctx(person_id=author_id)
+    return ctx, ctx.interface()
 
 
 class SendImageTest(unittest.TestCase):
@@ -66,8 +52,8 @@ class SendImageTest(unittest.TestCase):
             result = asyncio.run(tools.execute(ctx, "send_image", {"query": "red panda", "count": 2,
                                                                    "caption": "Regarde !"}))
         self.assertIn("2 image(s) envoyée(s) ici", result)
-        [(content, files)] = channel.sent
-        self.assertEqual(files, ["image1.jpg", "image2.png"])   # le logo est ignoré
+        [(_, content, files, _)] = channel.sent
+        self.assertEqual([f.filename for f in files], ["image1.jpg", "image2.png"])   # logo ignoré
         self.assertIn("Regarde !", content)
         self.assertIn("<https://a/page>", content)
 

@@ -8,6 +8,7 @@ import discord
 
 from libs.assistant import tools
 from libs.assistant.tools.utilities import format_weather
+from tests.helpers import discord_ctx, make_config
 
 OWNER, OTHER, BOT = 42, 7, 1
 
@@ -19,6 +20,7 @@ class FakeMessage:
         self.clean_content = content
         self.created_at = datetime.datetime(2026, 11, 12, 15, 0)
         self.reactions, self.pinned, self.deleted, self.edited = [], False, False, None
+        self.attachments = []
 
     async def add_reaction(self, emoji):
         self.reactions.append(emoji)
@@ -39,8 +41,9 @@ class FakeChannel:
         self.messages = []   # du plus ancien au plus récent
         self.sent = []
 
-    async def history(self, limit=100):
-        for message in reversed(self.messages[-limit:]):
+    async def history(self, limit=100, before=None):
+        messages = [m for m in self.messages if before is None or m.id < before.id]
+        for message in reversed(messages[-limit:] if limit else messages):
             yield message
 
     async def fetch_message(self, message_id):
@@ -55,10 +58,9 @@ class FakeChannel:
 
 
 def make_ctx(channel, disabled=()):
-    config = SimpleNamespace(owner_ids={OWNER}, web_access=True, disabled_tools=disabled)
-    bot = SimpleNamespace(config=config, user=SimpleNamespace(id=BOT), memory=None, guilds=[],
+    bot = SimpleNamespace(user=SimpleNamespace(id=BOT), guilds=[],
                           get_channel=lambda i: channel if i == channel.id else None)
-    return tools.ToolContext(bot=bot, channel=channel, author=SimpleNamespace(id=OWNER))
+    return discord_ctx(bot, channel, OWNER, config=make_config(disabled_tools=tuple(disabled)))
 
 
 def run(ctx, name, args):
@@ -93,11 +95,11 @@ class MessageToolsTest(unittest.TestCase):
                                      {"message": str(self.other.id), "content": "x"}))
 
     def test_delete_needs_confirmation(self):
-        with mock.patch.object(tools.base, "ask_confirmation", mock.AsyncMock(return_value=False)):
-            run(self.ctx, "delete_message", {"message": str(self.other.id)})
+        self.ctx.interface().confirm_answer = False
+        run(self.ctx, "delete_message", {"message": str(self.other.id)})
         self.assertFalse(self.other.deleted)
-        with mock.patch.object(tools.base, "ask_confirmation", mock.AsyncMock(return_value=True)):
-            run(self.ctx, "delete_message", {"message": str(self.other.id)})
+        self.ctx.interface().confirm_answer = True
+        run(self.ctx, "delete_message", {"message": str(self.other.id)})
         self.assertTrue(self.other.deleted)
 
     def test_search_and_unknown_message(self):
@@ -105,6 +107,35 @@ class MessageToolsTest(unittest.TestCase):
         self.assertIn("pizza !", result)
         self.assertIn(str(self.other.id), result)
         self.assertIn("introuvable", run(self.ctx, "react", {"emoji": "👍", "message": "123456789012345678"}))
+
+    def test_read_is_capped_and_before_chains_to_the_first_message(self):
+        self.channel.messages = [FakeMessage(200000000000000000 + i, OTHER, f"message {i}", self.channel)
+                                 for i in range(120)]
+        seen, before = [], None
+        for _ in range(5):
+            result = run(self.ctx, "read_messages", {"count": 500, **({"before": before} if before else {})})
+            seen += [l for l in result.splitlines() if l.startswith("[")]
+            if 'before="' not in result:
+                break
+            before = result.split('before="')[1].split('"')[0]
+        self.assertEqual(len(seen), 120)                      # 50 + 50 + 20, sans doublon
+        self.assertEqual(len(set(seen)), 120)
+        self.assertIn("début du salon", result)
+
+    def test_read_respects_small_context(self):
+        self.channel.messages = [FakeMessage(200000000000000000 + i, OTHER, "x" * 200, self.channel)
+                                 for i in range(50)]
+        tiny = make_ctx(self.channel)
+        tiny.rosalie.config = make_config(num_ctx=1000)
+        result = run(tiny, "read_messages", {})
+        self.assertLess(result.count("\n"), 10)
+        self.assertIn('before="', result)
+
+    def test_search_goes_through_whole_history(self):
+        self.channel.messages = ([FakeMessage(300000000000000000, OTHER, "le code secret", self.channel)]
+                                 + [FakeMessage(300000000000000001 + i, OTHER, "bla", self.channel)
+                                    for i in range(2000)])
+        self.assertIn("le code secret", run(self.ctx, "search_messages", {"query": "secret"}))
 
     def test_poll(self):
         self.assertIn("Sondage créé (3 réponses",

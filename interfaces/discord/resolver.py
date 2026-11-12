@@ -5,9 +5,11 @@ import unicodedata
 
 import discord
 
+from libs.assistant.tools.base import ToolError
 
-class ResolveError(Exception):
-    pass
+
+class ResolveError(ToolError):
+    """Cible introuvable ou ambiguë : le message est renvoyé au modèle."""
 
 
 ID_REGEX = re.compile(r"\d{15,20}")

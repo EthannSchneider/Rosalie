@@ -8,7 +8,7 @@ from libs.assistant.tools.base import ToolContext, tool, _int
       "partie de réponse. Ta réponse finale sera envoyée après, en message séparé.",
       {"content": ("string", "Texte à envoyer maintenant")}, required=("content",))
 async def say(ctx: ToolContext, content: str) -> str:
-    await ctx.channel.send(content[:2000])
+    await ctx.rosalie.send(ctx.conversation, content)
     return ("Message envoyé. Continue ce que tu faisais, puis donne la suite. "
             "Si tout est déjà dit, réponds [SILENCE].")
 
@@ -22,7 +22,7 @@ async def say(ctx: ToolContext, content: str) -> str:
        "intention": ("string", "Ce que tu comptes faire ou dire, assez précis pour t'en souvenir")},
       required=("minutes", "intention"))
 async def plan_followup(ctx: ToolContext, minutes: int, intention: str) -> str:
-    followup = ctx.bot.agenda.add(ctx.channel.id, ctx.author.id,
+    followup = ctx.rosalie.agenda.add(ctx.conversation.key, ctx.person.key,
                                   _int(minutes, 30, 1, 10080) * 60, intention)
     return f"Relance programmée {followup.line()}."
 
@@ -30,5 +30,5 @@ async def plan_followup(ctx: ToolContext, minutes: int, intention: str) -> str:
 @tool("cancel_followup", "Annule une relance programmée (par son numéro #id).",
       {"followup_id": ("integer", "Numéro de la relance")}, required=("followup_id",))
 async def cancel_followup(ctx: ToolContext, followup_id: int) -> str:
-    return "Relance annulée." if ctx.bot.agenda.cancel(_int(followup_id, 0, 0, 10**9)) \
+    return "Relance annulée." if ctx.rosalie.agenda.cancel(_int(followup_id, 0, 0, 10**9)) \
         else "Cette relance n'existe pas."

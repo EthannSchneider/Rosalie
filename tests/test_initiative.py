@@ -67,13 +67,13 @@ class AgendaTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "agenda.json"
             agenda = Agenda(path)
-            first = agenda.add(10, ME, 60, "lui rappeler sa lessive", now=NOW)
-            second = agenda.add(10, ME, 3600, "prendre des nouvelles", now=NOW)
-            agenda.set_home(10, ME)
+            first = agenda.add("discord:10", "discord:42", 60, "lui rappeler sa lessive", now=NOW)
+            second = agenda.add("discord:10", "discord:42", 3600, "prendre des nouvelles", now=NOW)
+            agenda.set_home("discord:10", "discord:42")
 
             reloaded = Agenda(path)
-            self.assertEqual([f.id for f in reloaded.pending(10)], [first.id, second.id])
-            self.assertEqual(reloaded.home, (10, ME))
+            self.assertEqual([f.id for f in reloaded.pending("discord:10")], [first.id, second.id])
+            self.assertEqual(reloaded.home, ("discord:10", "discord:42"))
             self.assertEqual(reloaded.pop_due(NOW + 30), [])
             self.assertEqual([f.id for f in reloaded.pop_due(NOW + 120)], [first.id])
             self.assertEqual(reloaded.pop_due(NOW + 120), [])   # une seule fois
@@ -91,17 +91,9 @@ class AgendaTest(unittest.TestCase):
 
 class InitiativeToolsTest(unittest.TestCase):
     def make_ctx(self, tmp, author_id=ME):
-        sent = []
-
-        async def send(content):
-            sent.append(content)
-            return SimpleNamespace(id=1, channel=None)
-
-        bot = SimpleNamespace(config=SimpleNamespace(owner_ids={ME}, web_access=True),
-                              agenda=Agenda(Path(tmp) / "agenda.json"))
-        ctx = SimpleNamespace(bot=bot, channel=SimpleNamespace(id=10, send=send),
-                              author=SimpleNamespace(id=author_id), is_owner=author_id == ME)
-        return ctx, sent
+        from tests.helpers import FakeRosalie, make_ctx
+        ctx = make_ctx(FakeRosalie(directory=Path(tmp)), conversation_id=10, person_id=author_id)
+        return ctx, ctx.interface().sent
 
     def test_plan_and_cancel_followup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -109,8 +101,8 @@ class InitiativeToolsTest(unittest.TestCase):
             result = asyncio.run(execute(ctx, "plan_followup",
                                          {"minutes": 10, "intention": "rappel lessive"}))
             self.assertIn("Relance programmée", result)
-            [followup] = ctx.bot.agenda.pending(10)
-            self.assertEqual(followup.user_id, ME)
+            [followup] = ctx.rosalie.agenda.pending("test:10")
+            self.assertEqual(followup.person, f"test:{ME}")
             result = asyncio.run(execute(ctx, "cancel_followup", {"followup_id": followup.id}))
             self.assertEqual(result, "Relance annulée.")
 
@@ -118,13 +110,13 @@ class InitiativeToolsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx, sent = self.make_ctx(tmp)
             asyncio.run(execute(ctx, "say", {"content": "Je regarde ça !"}))
-            self.assertEqual(sent, ["Je regarde ça !"])
+            self.assertEqual([text for _, text, _, _ in sent], ["Je regarde ça !"])
 
     def test_guests_cannot_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx, _ = self.make_ctx(tmp, author_id=99)
             asyncio.run(execute(ctx, "plan_followup", {"minutes": 1, "intention": "spam"}))
-            self.assertEqual(ctx.bot.agenda.pending(), [])
+            self.assertEqual(ctx.rosalie.agenda.pending(), [])
             names = {s["function"]["name"] for s in schemas(guest=True)}
             self.assertNotIn("plan_followup", names)
             self.assertNotIn("say", names)

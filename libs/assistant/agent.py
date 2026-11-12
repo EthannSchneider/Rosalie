@@ -1,5 +1,7 @@
+import itertools
 import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from libs.assistant.code_runner import extract_code
@@ -97,20 +99,48 @@ def _inline_tool_calls(content: str) -> list[dict]:
     return [{"function": {"name": name, "arguments": arguments}}]
 
 
+PROGRESS_NOTE = ("(Note système : point d'étape, tu as déjà enchaîné {steps} actions. Écris à "
+                 "{speaker} un court message (1 à 3 phrases) : ce que tu as fait jusqu'ici, ce que tu "
+                 "as trouvé, et ce que tu fais ensuite. N'appelle aucun outil, tu continueras après.)")
+CONTINUE_NOTE = "(Note système : message envoyé. Continue ta tâche.)"
+
+
+async def _progress(llm: OllamaClient, messages: list[dict], ctx: ToolContext, steps: int) -> str:
+    """Demande au modèle un résumé de ce qu'il est en train de faire (sans outils)."""
+    speaker = getattr(ctx.person, "display_name", None) or "la personne"
+    note = {"role": "user", "content": PROGRESS_NOTE.format(steps=steps, speaker=speaker)}
+    message = await llm.chat_message(messages + [note])
+    return (message.get("content") or "").strip()
+
+
 async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
-                    max_steps: int = 6, acted: bool = False) -> AgentResult:
+                    max_steps: int = 50, acted: bool = False, progress_every: int = 0,
+                    on_progress: Callable[[str], Awaitable[None]] | None = None) -> AgentResult:
     """Boucle « le modèle appelle des outils -> on lui renvoie les résultats »
     jusqu'à ce qu'il produise une réponse finale en texte.
+    max_steps : nombre max de tours d'outils (0 = illimité).
+    progress_every + on_progress : tous les N tours, elle envoie un résumé de ce qu'elle fait.
     acted=True : une action a déjà eu lieu (code exécuté) -> pas de soupçon de mensonge."""
     actions: list[str] = []
     trace: list[dict] = []
     errors: list[str] = []
-    tools = schemas(getattr(ctx.bot.config, "web_access", True), guest=not ctx.is_owner,
-                    disabled=getattr(ctx.bot.config, "disabled_tools", ()))
+    tools = schemas(getattr(ctx.config, "web_access", True), guest=not ctx.is_owner,
+                    disabled=getattr(ctx.config, "disabled_tools", ()),
+                    interfaces=set(ctx.rosalie.interfaces))
     nudged = False
-    num_ctx = getattr(ctx.bot.config, "num_ctx", 8192)
+    num_ctx = getattr(ctx.config, "num_ctx", 8192)
     budget = int(num_ctx * (1 - OUTPUT_RESERVE) * CHARS_PER_TOKEN) - len(json.dumps(tools, ensure_ascii=False))
-    for _ in range(max_steps):
+    steps = 0
+    for _ in (itertools.count() if max_steps <= 0 else range(max_steps)):
+        if steps and progress_every > 0 and on_progress and steps % progress_every == 0 \
+                and messages[-1]["role"] == "tool":
+            fit_context(messages, budget)
+            summary = await _progress(llm, messages, ctx, steps)
+            if summary and not _inline_tool_calls(summary):
+                Log.info(f"Point d'étape après {steps} actions")
+                await on_progress(summary)
+                messages += [{"role": "assistant", "content": summary},
+                             {"role": "user", "content": CONTINUE_NOTE}]
         if fit_context(messages, budget):
             Log.warning(f"Conversation raccourcie pour tenir dans le contexte (OLLAMA_NUM_CTX={num_ctx})")
         message = await llm.chat_message(messages, tools=tools)
@@ -138,6 +168,7 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
                 content += "\n\n⚠️ (Aucune action n'a réellement été effectuée.)"
             return AgentResult(content.strip(), actions, trace, errors)
 
+        steps += 1
         call_message = {"role": "assistant", "content": "", "tool_calls": calls}
         messages.append(call_message)
         trace.append(call_message)
@@ -153,4 +184,5 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
             messages.append({"role": "tool", "content": result, "tool_name": name})
             trace.append({"role": "tool", "content": result[:TRACE_RESULT_CHARS], "tool_name": name})
 
-    return AgentResult("J'ai enchaîné trop d'étapes sans finir, je m'arrête là.", actions, trace, errors)
+    return AgentResult(f"J'ai enchaîné {steps} étapes sans finir (limite MAX_TOOL_STEPS), je m'arrête là.",
+                       actions, trace, errors)

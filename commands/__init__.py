@@ -7,7 +7,8 @@ from libs.log import Log
 
 
 COMMANDS = {
-    "rosalie": "rosalie",        # lance le bot Discord
+    "rosalie": "rosalie",        # lance Rosalie avec les interfaces du .env (INTERFACES)
+    "chat": "chat",              # parle avec elle dans le terminal (sans Discord)
     "pull": "pull",            # télécharge le modèle Ollama configuré
     "test": "test",            # lance les tests unitaires
 }

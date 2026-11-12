@@ -8,6 +8,7 @@ from unittest import mock
 
 from libs.assistant.agent import run_agent
 from libs.assistant.code_runner import CodeBlock, extract_code, run_code, safe_env
+from tests.helpers import make_ctx
 
 
 class ExtractTest(unittest.TestCase):
@@ -70,8 +71,7 @@ class AgentCodeTest(unittest.TestCase):
                 calls.append(1)
                 return {"content": "Je vais calculer ça :\n```run-python\nprint(1)\n```"}
 
-        bot = SimpleNamespace(config=SimpleNamespace(web_access=True, owner_ids={1}))
-        ctx = SimpleNamespace(bot=bot, is_owner=True)
+        ctx = make_ctx()
         result = asyncio.run(run_agent(LLM(), [{"role": "system", "content": "S"}], ctx))
         self.assertEqual(len(calls), 1)
         self.assertIn("```run-python", result.text)
@@ -81,8 +81,7 @@ class AgentCodeTest(unittest.TestCase):
             async def chat_message(self, messages, tools=None):
                 return {"content": "C'est fait, le fichier est créé."}
 
-        bot = SimpleNamespace(config=SimpleNamespace(web_access=True, owner_ids={1}))
-        ctx = SimpleNamespace(bot=bot, is_owner=True)
+        ctx = make_ctx()
         result = asyncio.run(run_agent(LLM(), [{"role": "system", "content": "S"}], ctx, acted=True))
         self.assertNotIn("⚠️", result.text)
 

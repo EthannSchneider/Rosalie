@@ -1,23 +1,7 @@
+"""Petits utilitaires Discord : description d'un salon, texte lisible d'un message."""
 import discord
 
-
-DISCORD_LIMIT = 2000
-
-
-def split_message(text: str, limit: int = DISCORD_LIMIT) -> list[str]:
-    """Découpe un texte en morceaux <= limit, de préférence sur les retours à la ligne."""
-    chunks = []
-    while len(text) > limit:
-        cut = text.rfind("\n", 0, limit)
-        if cut <= 0:
-            cut = text.rfind(" ", 0, limit)
-        if cut <= 0:
-            cut = limit
-        chunks.append(text[:cut].rstrip())
-        text = text[cut:].lstrip()
-    if text:
-        chunks.append(text)
-    return chunks
+from libs.core.types import make_key
 
 
 def place_name(channel: discord.abc.Messageable) -> str:
@@ -37,3 +21,14 @@ def message_text(message: discord.Message, bot_user: discord.ClientUser) -> str:
     for attachment in message.attachments:
         text += f" [pièce jointe : {attachment.filename}]"
     return text.strip()
+
+
+def conversation_key(channel_or_ctx) -> str:
+    """Clé mémoire d'un salon Discord (accepte un salon ou un ApplicationContext)."""
+    channel = getattr(channel_or_ctx, "channel", None) or channel_or_ctx
+    return make_key("discord", channel.id)
+
+
+async def is_owner(bot: discord.Bot, user: discord.abc.User) -> bool:
+    """Seuls les OWNER_IDS du .env peuvent commander Rosalie sur Discord."""
+    return user.id in bot.rosalie.config.owner_ids

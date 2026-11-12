@@ -10,28 +10,28 @@ class Settings:
 
     def __init__(self, path: Path):
         self.__path = path
-        self.__data = {"channel_ids": [], "model": None}
+        self.__data = {"dedicated": [], "model": None}
         if path.exists():
             self.__data.update(json.loads(path.read_text(encoding="utf-8")))
+        # Ancien format : ids de salons Discord
+        legacy = self.__data.pop("channel_ids", [])
+        self.__data["dedicated"] = sorted(set(self.__data["dedicated"]) | {f"discord:{i}" for i in legacy})
 
     def __save(self):
         self.__path.parent.mkdir(parents=True, exist_ok=True)
         self.__path.write_text(json.dumps(self.__data, indent=2), encoding="utf-8")
 
     @property
-    def channel_ids(self) -> set[int]:
-        return set(self.__data["channel_ids"])
+    def dedicated(self) -> set[str]:
+        """Conversations dédiées (clés « interface:id ») : elle y répond à tout."""
+        return set(self.__data["dedicated"])
 
-    def toggle_channel(self, channel_id: int) -> bool:
-        """Ajoute/retire un salon dédié. Retourne True s'il est maintenant actif."""
-        ids = self.channel_ids
-        if channel_id in ids:
-            ids.remove(channel_id)
-            enabled = False
-        else:
-            ids.add(channel_id)
-            enabled = True
-        self.__data["channel_ids"] = sorted(ids)
+    def toggle_dedicated(self, key: str) -> bool:
+        """Ajoute/retire une conversation dédiée. Retourne True si elle l'est maintenant."""
+        keys = self.dedicated
+        enabled = key not in keys
+        keys.symmetric_difference_update({key})
+        self.__data["dedicated"] = sorted(keys)
         self.__save()
         return enabled
 

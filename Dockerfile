@@ -25,7 +25,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY bot.py requirements.txt ./
 COPY commands/ commands/
-COPY cogs/ cogs/
+COPY interfaces/ interfaces/
 COPY libs/ libs/
 COPY personas/ personas/
 COPY tests/ tests/

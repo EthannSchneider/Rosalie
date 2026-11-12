@@ -10,7 +10,7 @@ from libs.assistant.tools.base import ToolContext, tool, _int
        "count": ("integer", "Nombre de résultats (max 8)")},
       required=("query",))
 async def web_search(ctx: ToolContext, query: str, count: int = 5) -> str:
-    config = ctx.bot.config
+    config = ctx.config
     try:
         results = await web.search(query, _int(count, 5, 1, 8), config.web_search_provider,
                                    config.searxng_url, config.brave_api_key)
@@ -28,8 +28,7 @@ async def web_search(ctx: ToolContext, query: str, count: int = 5) -> str:
       required=("url",))
 async def fetch_url(ctx: ToolContext, url: str) -> str:
     try:
-        title, text = await web.fetch(url, browser=getattr(ctx.bot, "browser", None),
-                                      mode=ctx.bot.config.web_browser)
+        title, text = await web.fetch(url, browser=ctx.rosalie.browser, mode=ctx.config.web_browser)
     except web.WebError as error:
         return f"Erreur : {error}"
     return (f"Page : {title}\nAdresse : {url}\n\n{text}\n\n"

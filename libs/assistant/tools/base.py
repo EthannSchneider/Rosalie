@@ -1,30 +1,48 @@
-"""Socle des outils : contexte, registre, décorateur @tool, exécution sécurisée, helpers."""
+"""Socle des outils : contexte, registre, décorateur @tool, exécution sécurisée, helpers.
+
+Indépendant de toute messagerie. Un outil propre à une interface se déclare avec
+@tool(..., requires="discord") : il n'est proposé au modèle que si cette interface tourne
+(et reste utilisable depuis une autre interface, ex : envoyer sur Discord depuis le terminal).
+"""
+from __future__ import annotations
+
 import json
-import re
+import traceback
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable
 
-import discord
-
-from libs.assistant.confirm import ask_confirmation
-from libs.assistant.resolver import ResolveError, _id, resolve_channel
-from libs.conversation.memory import Entry
+from libs.core.types import Conversation, Person
 from libs.log import Log
+
+if TYPE_CHECKING:
+    from libs.core.rosalie import Rosalie
+
+
+class ToolError(Exception):
+    """Erreur attendue d'un outil : son message est renvoyé tel quel au modèle."""
 
 
 @dataclass
 class ToolContext:
-    bot: discord.Bot
-    channel: discord.abc.Messageable   # salon où l'ordre a été donné
-    author: discord.abc.User
+    rosalie: Rosalie
+    conversation: Conversation   # où l'ordre a été donné
+    person: Person               # qui l'a donné
 
     @property
     def is_owner(self) -> bool:
-        return self.author.id in self.bot.config.owner_ids
+        return self.person.is_owner
 
     @property
-    def guild(self) -> discord.Guild | None:
-        return getattr(self.channel, "guild", None)
+    def config(self):
+        return self.rosalie.config
+
+    def interface(self, name: str | None = None):
+        """L'interface demandée (par défaut celle de la conversation)."""
+        name = name or self.conversation.interface
+        interface = self.rosalie.interfaces.get(name)
+        if interface is None:
+            raise ToolError(f"l'interface {name} n'est pas lancée")
+        return interface
 
 
 @dataclass
@@ -35,6 +53,7 @@ class Tool:
     required: tuple[str, ...]
     func: Callable[..., Awaitable[str]]
     confirm: str | None = None                  # texte de confirmation => outil dangereux
+    requires: str | None = None                 # interface nécessaire (« discord »…)
 
     def schema(self) -> dict:
         return {"type": "function", "function": {
@@ -53,9 +72,9 @@ TOOLS: dict[str, Tool] = {}
 
 
 def tool(name: str, description: str, params: dict | None = None,
-         required: tuple[str, ...] = (), confirm: str | None = None):
+         required: tuple[str, ...] = (), confirm: str | None = None, requires: str | None = None):
     def decorator(func):
-        TOOLS[name] = Tool(name, description, params or {}, required, func, confirm)
+        TOOLS[name] = Tool(name, description, params or {}, required, func, confirm, requires)
         return func
     return decorator
 
@@ -66,10 +85,13 @@ GUEST_TOOLS = {"web_search", "fetch_url", "weather"}
 
 
 def schemas(web_access: bool = True, guest: bool = False,
-            disabled: tuple[str, ...] | frozenset[str] = ()) -> list[dict]:
+            disabled: tuple[str, ...] | frozenset[str] = (),
+            interfaces: set[str] | frozenset[str] | None = None) -> list[dict]:
+    """interfaces : interfaces lancées (None = toutes, pour les tests)."""
     return [t.schema() for t in TOOLS.values()
             if (web_access or t.name not in WEB_TOOLS) and (not guest or t.name in GUEST_TOOLS)
-            and t.name not in disabled]
+            and t.name not in disabled
+            and (t.requires is None or interfaces is None or t.requires in interfaces)]
 
 
 async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> str:
@@ -77,12 +99,13 @@ async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> 
     selected = TOOLS.get(name)
     if selected is None:
         return f"Erreur : l'outil « {name} » n'existe pas."
-    if name in getattr(ctx.bot.config, "disabled_tools", ()):
+    config = ctx.config
+    if name in getattr(config, "disabled_tools", ()):
         return f"Erreur : l'outil « {name} » est désactivé (DISABLED_TOOLS)."
     if name not in GUEST_TOOLS and not ctx.is_owner:
-        Log.warning(f"Tool {name} refused for non-owner {ctx.author}")
+        Log.warning(f"Tool {name} refused for non-owner {ctx.person.key}")
         return "Erreur : seul mon créateur peut me demander ça."
-    if name in WEB_TOOLS and not getattr(ctx.bot.config, "web_access", True):
+    if name in WEB_TOOLS and not getattr(config, "web_access", True):
         return "Erreur : l'accès internet est désactivé (WEB_ACCESS=false)."
     if isinstance(arguments, str):
         try:
@@ -96,21 +119,31 @@ async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> 
         return f"Erreur : paramètre(s) manquant(s) : {', '.join(missing)}."
 
     try:
+        if selected.requires:
+            ctx.interface(selected.requires)   # lancée ?
         if selected.confirm:
             text = selected.confirm.format_map(_Default(arguments))
-            if not await ask_confirmation(ctx.channel, ctx.bot.config.owner_ids, text):
+            confirmed, _ = await ctx.interface().confirm(ctx.conversation, text)
+            if not confirmed:
                 return "Action annulée : l'utilisateur n'a pas confirmé."
         result = await selected.func(ctx, **arguments)
-    except ResolveError as error:
+    except ToolError as error:
         result = f"Erreur : {error}"
-    except discord.Forbidden:
-        result = "Erreur : je n'ai pas la permission Discord pour faire ça."
-    except discord.HTTPException as error:
-        result = f"Erreur Discord : {error.text or error}"
     except (TypeError, ValueError) as error:
         result = f"Erreur : arguments invalides ({error})."
+    except Exception as error:   # erreur propre à une messagerie (permission…) ou imprévue
+        result = _describe(ctx, error)
     Log.command(f"tool {name}({arguments}) -> {result[:200]}")
     return result
+
+
+def _describe(ctx: ToolContext, error: Exception) -> str:
+    for interface in ctx.rosalie.interfaces.values():
+        described = interface.describe_error(error)
+        if described:
+            return described
+    Log.error(f"Outil en échec : {error}\n{traceback.format_exc()}")
+    return f"Erreur : {type(error).__name__} : {error}"
 
 
 class _Default(dict):
@@ -118,70 +151,15 @@ class _Default(dict):
         return "?"
 
 
+def result_budget(ctx: "ToolContext", share: float = 0.4) -> int:
+    """Taille (en caractères) qu'un résultat d'outil peut occuper sans saturer le contexte du
+    modèle. Les outils qui lisent beaucoup s'arrêtent là et proposent de continuer."""
+    num_ctx = getattr(ctx.config, "num_ctx", None) or 16384
+    return int(num_ctx * 3.2 * share)
+
+
 def _int(value, default: int, low: int, high: int) -> int:
     try:
         return max(low, min(high, int(value)))
     except (TypeError, ValueError):
         return default
-
-
-async def _channel(ctx: ToolContext, query: str | None, server: str | None = None,
-                   messageable: bool = True):
-    """resolve_channel + repli : un ID absent du cache est demandé à Discord (fils, DM…)."""
-    try:
-        return resolve_channel(ctx.bot, query, ctx.channel, server, messageable=messageable)
-    except ResolveError:
-        channel_id = _id(query) if query else None
-        if not channel_id:
-            raise
-    try:
-        return await ctx.bot.fetch_channel(channel_id)
-    except (discord.NotFound, discord.Forbidden, discord.InvalidData, AttributeError):
-        raise ResolveError(f"l'identifiant {channel_id} ne correspond à aucun salon que je peux "
-                           "voir (c'est peut-être l'ID d'un message ou d'une personne, ou un salon "
-                           "d'un serveur où je ne suis pas). Utilise list_channels.") from None
-
-
-_MESSAGE_LINK = re.compile(r"discord(?:app)?\.com/channels/(?:\d+|@me)/(\d+)/(\d+)")
-
-
-async def _message(ctx: ToolContext, message: str, channel: str | None = None,
-                   from_owner: bool = False) -> discord.Message:
-    """Message par id, lien Discord, ou « dernier » (le plus récent du salon qui n'est pas
-    de Rosalie ; from_owner=True : le plus récent de la personne qui parle)."""
-    text = str(message or "").strip()
-    link = _MESSAGE_LINK.search(text)
-    if link:
-        channel, text = link.group(1), link.group(2)
-    target = await _channel(ctx, channel)
-    lowered = text.lower()
-    if "dernier" in lowered or lowered in ("last", "my last"):
-        from_owner = from_owner or lowered.startswith(("mon ", "my "))
-        me = getattr(ctx.bot.user, "id", None)
-        async for candidate in target.history(limit=30):
-            if candidate.author.id != me and (not from_owner or candidate.author.id == ctx.author.id):
-                return candidate
-        raise ResolveError("aucun message récent trouvé dans ce salon")
-    message_id = _id(text)
-    if not message_id:
-        raise ResolveError(f"« {message} » n'est pas un id ou un lien de message "
-                           "(utilise read_messages pour voir les ids)")
-    try:
-        return await target.fetch_message(message_id)
-    except discord.NotFound:
-        raise ResolveError(f"message {message_id} introuvable dans ce salon") from None
-
-
-def _remember_sent(ctx: ToolContext, sent: discord.Message, content: str):
-    """Le message envoyé par un outil entre dans l'historique du salon de destination :
-    si la personne répond, Rosalie sait ce qu'elle lui a écrit et pour qui."""
-    memory = getattr(ctx.bot, "memory", None)
-    channel = getattr(sent, "channel", None)
-    if memory is None or channel is None or channel.id == getattr(ctx.channel, "id", None):
-        return   # même salon : la réponse finale y est déjà enregistrée
-
-    me = ctx.bot.user
-    memory.add(channel.id, Entry(
-        author_id=me.id, author_name=me.display_name,
-        content=content,
-        is_bot=True, message_id=sent.id, acted=True))

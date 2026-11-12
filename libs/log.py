@@ -3,10 +3,6 @@ from __future__ import annotations
 from enum import Enum
 import datetime
 import os
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # discord n'est pas requis pour les commandes CLI (ex: dataset)
-    import discord
 
 
 class LogType(Enum):
@@ -28,7 +24,8 @@ class Log():
         self.__write_log()
 
     def __print(self):
-        print(self.__log, flush=True)
+        if not os.getenv("LOG_QUIET"):   # ex : interface terminal (logs seulement dans le fichier)
+            print(self.__log, flush=True)
 
     def __write_log(self):
         try:
@@ -38,19 +35,9 @@ class Log():
             pass
 
     @staticmethod
-    def message(channel: discord.abc.Messageable, message: str, author: str, bot: str,
-                recipient: str | None = None) -> "Log":
-        """recipient : la personne avec qui le bot parle en DM. À donner quand c'est le bot
-        qui écrit : py-cord ne connaît pas toujours channel.recipient."""
-        import discord
-
-        if isinstance(channel, discord.DMChannel):
-            if channel.recipient:
-                recipient = channel.recipient.name
-            channel_name = bot + " DM with " + (recipient or author)
-        else:
-            channel_name = getattr(channel, "name", str(channel))
-        return Log("(" + channel_name + ") " + author + ": " + message, LogType.MESSAGE)
+    def message(where: str, message: str, author: str) -> "Log":
+        """where : « Discord · en message privé avec ethann69 », « Terminal · … »."""
+        return Log("(" + where + ") " + author + ": " + message, LogType.MESSAGE)
 
     @staticmethod
     def info(message: str) -> "Log":

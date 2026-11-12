@@ -1,10 +1,7 @@
-"""Images : chercher des photos sur le web et les envoyer sur Discord."""
-import io
-
-import discord
-
+"""Images : chercher des photos sur le web et les envoyer (en fichiers joints) là où on parle."""
 from libs import web
-from libs.assistant.tools.base import ToolContext, tool, _int, _channel, _remember_sent
+from libs.assistant.tools.base import ToolContext, tool, _int
+from libs.core.types import OutgoingFile
 from libs.log import Log
 
 
@@ -13,20 +10,20 @@ MIN_IMAGE_BYTES = 12_000   # en dessous : presque toujours un logo ou une icône
 
 async def _send_images(ctx: ToolContext, images: list[web.DownloadedImage], sources: list[str],
                        caption: str | None, channel: str | None) -> str:
-    target = await _channel(ctx, channel) if channel else ctx.channel
+    target = await ctx.interface().destination(channel, ctx.conversation) if channel else ctx.conversation
     links = [f"<{url}>" for url in dict.fromkeys(sources) if url]
     content = "\n".join(filter(None, [(caption or "").strip(),
-                                      ("Source : " + " ".join(links)) if links else ""]))[:2000]
-    files = [discord.File(io.BytesIO(image.data), filename=f"image{i}.{image.filename.split('.')[-1]}")
+                                      ("Source : " + " ".join(links)) if links else ""]))
+    files = [OutgoingFile(f"image{i}.{image.filename.split('.')[-1]}", image.data)
              for i, image in enumerate(images, 1)]
-    sent = await target.send(content or None, files=files)
-    _remember_sent(ctx, sent, f"[{len(files)} image(s) envoyée(s)] {content}".strip())
-    where = "ici" if target is ctx.channel else f"dans #{getattr(target, 'name', 'DM')}"
+    await ctx.rosalie.send(target, content or None, files=files, record=target.key != ctx.conversation.key,
+                           record_as=f"[{len(files)} image(s) envoyée(s)] {content}".strip())
+    where = "ici" if target.key == ctx.conversation.key else target.place
     return f"{len(files)} image(s) envoyée(s) {where}"
 
 
 @tool("send_image",
-      "Cherche des photos/images sur internet et les ENVOIE directement sur Discord (fichiers "
+      "Cherche des photos/images sur internet et les ENVOIE directement dans la conversation (fichiers "
       "joints, avec la source). Pour « montre-moi », « envoie une photo de… », « à quoi ressemble… ». "
       "Formule la recherche avec des mots-clés précis (l'anglais donne souvent de meilleurs résultats).",
       {"query": ("string", "Ce que l'image doit montrer, en mots-clés"),
@@ -36,7 +33,7 @@ async def _send_images(ctx: ToolContext, images: list[web.DownloadedImage], sour
       required=("query",))
 async def send_image(ctx: ToolContext, query: str, count: int = 1, caption: str | None = None,
                      channel: str | None = None) -> str:
-    config = ctx.bot.config
+    config = ctx.config
     wanted = _int(count, 1, 1, 4)
     try:
         results = await web.search_images(query, wanted * 4, config.web_search_provider,
@@ -79,7 +76,7 @@ async def send_image(ctx: ToolContext, query: str, count: int = 1, caption: str 
 
 
 @tool("send_image_url",
-      "Envoie sur Discord une image précise à partir de son adresse (lien direct vers l'image, "
+      "Envoie dans la conversation une image précise à partir de son adresse (lien direct vers l'image, "
       "ou page web : son image principale est alors prise).",
       {"url": ("string", "Adresse http(s) de l'image ou de la page"),
        "caption": ("string", "Petit texte à mettre avec l'image (optionnel)"),
