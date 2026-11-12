@@ -101,7 +101,7 @@ class ExecuteTest(unittest.TestCase):
     def test_dangerous_tool_needs_confirmation(self):
         bot, _, _ = make_bot()
         ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=42, name="Ethann"))
-        with mock.patch.object(tools, "ask_confirmation", mock.AsyncMock(return_value=False)) as ask:
+        with mock.patch.object(tools.base, "ask_confirmation", mock.AsyncMock(return_value=False)) as ask:
             result = asyncio.run(tools.execute(ctx, "delete_channel", {"channel": "memes"}))
         ask.assert_awaited_once()
         self.assertIn("annulée", result)
@@ -109,7 +109,7 @@ class ExecuteTest(unittest.TestCase):
     def test_guest_cannot_act(self):
         bot, _, _ = make_bot()
         ctx = tools.ToolContext(bot=bot, channel=None, author=SimpleNamespace(id=7, name="Sachiko"))
-        with mock.patch.object(tools, "ask_confirmation", mock.AsyncMock(return_value=True)) as ask:
+        with mock.patch.object(tools.base, "ask_confirmation", mock.AsyncMock(return_value=True)) as ask:
             for name, args in [("delete_channel", {"channel": "memes"}),
                                ("send_dm", {"user": "x", "content": "y"}),
                                ("recall", {"query": "adresse"})]:

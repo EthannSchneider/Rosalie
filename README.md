@@ -22,7 +22,15 @@ cogs/
   rosalie/training.py         ⭐ et « Corriger (Rosalie) » → exemples de fine-tuning
 libs/
   assistant/agent.py         boucle LLM ⇄ outils
-  assistant/tools.py         les actions Discord + mémoire (ajoute les tiennes ici)
+  assistant/tools/           les outils, un fichier par catégorie (ajoute les tiens ici) :
+    base.py                  socle : ToolContext, @tool, registre, exécution sécurisée
+    server.py                serveurs, salons, membres, statut
+    messages.py              envoyer / lire / purger des messages
+    moderation.py            rôles, kick, ban
+    initiative.py            say, relances programmées
+    memory.py                souvenirs à long terme
+    internet.py              recherche web, lecture de pages
+    images.py                chercher et envoyer des photos
   assistant/resolver.py      « Le bunker » / #salon / @membre → objets Discord
   assistant/confirm.py       boutons Confirmer/Annuler (actions dangereuses, code à exécuter)
   assistant/code_runner.py   exécution du code qu'elle écrit (```run-python / ```run-bash)
@@ -64,9 +72,11 @@ l'actualité, la météo, les prix… et cite ses sources. Les adresses du rése
 (localhost, 192.168.x…) sont refusées, et le contenu web est traité comme des données,
 jamais comme des ordres. `WEB_ACCESS=false` pour couper.
 
-Ajouter une action = une fonction dans `libs/assistant/tools.py` :
+Ajouter une action = une fonction dans le bon fichier de `libs/assistant/tools/` (une nouvelle catégorie = un nouveau fichier, à importer dans `tools/__init__.py`) :
 
 ```python
+from libs.assistant.tools.base import ToolContext, tool
+
 @tool("pin_message", "Épingle un message.",
       {"message_id": ("string", "Id du message")}, required=("message_id",))
 async def pin_message(ctx: ToolContext, message_id: str) -> str:
