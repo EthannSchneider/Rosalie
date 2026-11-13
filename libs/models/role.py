@@ -18,25 +18,50 @@ from libs.models.bases import MainBase
 SUPERADMIN = "superadmin"
 ROLE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 
-# nom -> (libellé, description). L'ordre est celui de l'affichage.
-PERMISSIONS: dict[str, tuple[str, str]] = {
-    "chat": ("Chat", "Discuter avec Rosalie sur le site."),
-    "act": ("Faire agir Rosalie",
-            "Outils, souvenirs, exécution de code (avec confirmation), sur le site et sur Discord "
-            "si son identifiant Discord est lié. Sans elle : discussion et recherche seulement."),
-    "personas": ("Personnalités", "Créer, modifier et choisir les personnalités."),
-    "settings": ("Réglages", "Modifier tous les réglages de Rosalie (token Discord, modèle, outils…)."),
-    "users": ("Utilisateurs", "Créer, modifier, supprimer les comptes et choisir leur rôle."),
-    "roles": ("Rôles", "Créer et modifier les rôles et leurs permissions."),
+# nom -> (libellé, description, groupe). L'ordre est celui de l'affichage.
+# Les permissions « act.* » disent sur quoi on peut faire agir Rosalie ; en avoir au moins une
+# fait de la personne une « owner » (conversation de créateur, et non d'invité). « web » n'en fait
+# pas partie : faire une recherche pour quelqu'un ne le rend pas créateur.
+TALK, ACT, ADMIN = "Discussion", "Faire agir Rosalie", "Administration"
+PERMISSIONS: dict[str, tuple[str, str, str]] = {
+    "chat": ("Chat sur le site", "Discuter avec Rosalie sur le site web.", TALK),
+    "web": ("Recherche web", "Elle cherche sur internet, lit des pages et donne la météo pour toi "
+            "(si l'accès internet est activé dans les réglages).", TALK),
+    "act.memory": ("Souvenirs", "Elle retient, retrouve et oublie des souvenirs, prend des notes et s'en "
+                   "sert dans la conversation.", ACT),
+    "act.followups": ("Relances et messages", "Elle peut t'écrire tout de suite (say) ou plus tard "
+                      "(programmer / annuler une relance).", ACT),
+    "act.images": ("Photos", "Elle cherche et envoie des photos.", ACT),
+    "act.discord_read": ("Discord : lire", "Serveurs, salons, membres, rôles ; lire et chercher des "
+                         "messages.", ACT),
+    "act.discord_write": ("Discord : écrire", "Envoyer dans un salon ou en DM, réagir, épingler, "
+                          "modifier ses messages, sondages, fils.", ACT),
+    "act.discord_manage": ("Discord : gérer le serveur", "Créer / supprimer des salons, statut, "
+                           "invitations, purger ou supprimer des messages.", ACT),
+    "act.discord_moderate": ("Discord : modérer", "Donner / retirer des rôles, expulser, bannir, "
+                             "exclure temporairement, changer un surnom.", ACT),
+    "act.code": ("Exécuter du code", "Elle propose du code Python / bash qui tourne après ta "
+                 "confirmation.", ACT),
+    "personas": ("Personnalités", "Créer, modifier et choisir les personnalités.", ADMIN),
+    "settings": ("Réglages", "Modifier tous les réglages de Rosalie (token Discord, modèle, outils…).", ADMIN),
+    "users": ("Utilisateurs", "Créer, modifier, supprimer les comptes et choisir leur rôle.", ADMIN),
+    "roles": ("Rôles", "Créer et modifier les rôles et leurs permissions.", ADMIN),
 }
+ACT_PERMISSIONS = tuple(name for name, (_, _, group) in PERMISSIONS.items() if group == ACT)
+
+
+def acts(permissions) -> bool:
+    """Au moins une permission « act.* » : Rosalie peut agir pour cette personne (owner)."""
+    return any(p in ACT_PERMISSIONS for p in permissions)
+
 
 # Rôles créés au départ (migration main 0003). superadmin est verrouillé ; les autres se modifient.
 DEFAULT_ROLES: list[dict[str, Any]] = [
     {"name": SUPERADMIN, "label": "Superadmin", "locked": True, "permissions": list(PERMISSIONS),
      "description": "Tout, y compris les rôles et les utilisateurs. Il en reste toujours au moins un."},
-    {"name": "admin", "label": "Admin", "locked": False, "permissions": ["chat", "act"],
+    {"name": "admin", "label": "Admin", "locked": False, "permissions": ["chat", "web", *ACT_PERMISSIONS],
      "description": "Rosalie agit pour lui (outils, souvenirs, code), sur le chat web et sur Discord."},
-    {"name": "user", "label": "Utilisateur", "locked": False, "permissions": ["chat"],
+    {"name": "user", "label": "Utilisateur", "locked": False, "permissions": ["chat", "web"],
      "description": "Discute avec Rosalie, comme un invité : discussion et recherche seulement."},
 ]
 

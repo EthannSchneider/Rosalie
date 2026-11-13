@@ -59,6 +59,10 @@ FIELDS: tuple[Field, ...] = (
     Field("public_replies", "bool", True, "Discord", "Discuter avec les autres",
           "Les autres personnes peuvent lui parler (DM, mention, son nom) : réponses seulement, "
           "aucune action, aucun accès à ses souvenirs.", env="PUBLIC_REPLIES"),
+    Field("guest_web", "bool", True, "Discord", "Recherche web pour les invités",
+          "Les personnes sans compte lié (les inconnus sur Discord) peuvent lui faire chercher sur "
+          "internet, lire une page, donner la météo. Pour les comptes : permission « Recherche web ».",
+          env=""),
     Field("public_cooldown", "int", 5, "Discord", "Délai anti-spam (s)",
           "Secondes minimum entre deux réponses à une même personne (non-owner).",
           env="PUBLIC_COOLDOWN", min=0, max=3600),

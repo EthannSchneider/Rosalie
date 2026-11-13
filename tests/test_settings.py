@@ -239,6 +239,11 @@ class DiscordOwnersTest(StoreCase):
                 self.assertEqual(rosalie.discord_owners(), frozenset({111111111111111111}))
                 rosalie.accounts.create("boss", "motdepasse", "superadmin", "222222222222222222")
                 self.assertEqual(rosalie.discord_owners(), frozenset({222222222222222222}))
+                # un inconnu sur Discord : recherche web seulement, si le réglage le permet
+                self.assertEqual(rosalie.discord_permissions(333333333333333333), frozenset({"web"}))
+                rosalie.update_settings({"guest_web": False})
+                self.assertEqual(rosalie.discord_permissions(333333333333333333), frozenset())
+                self.assertIn("act.code", rosalie.discord_permissions(222222222222222222))
             finally:
                 await rosalie.llm.close()
                 rosalie.long_term.close()

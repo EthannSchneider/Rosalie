@@ -23,7 +23,7 @@ USAGE = """Comptes de Rosalie (storages/rosalie.sqlite3)
   python bot.py users delete <nom>
 
 Rôles et permissions : python bot.py roles. Sur Discord, Rosalie obéit aux comptes liés à leur
-identifiant Discord dont le rôle a la permission « act » (clic droit sur ton profil > Copier
+identifiant Discord dont le rôle a au moins une permission « act.* » (clic droit sur ton profil > Copier
 l'identifiant, mode développeur requis)."""
 
 

@@ -81,15 +81,31 @@ def tool(name: str, description: str, params: dict | None = None,
 
 WEB_TOOLS = {"web_search", "fetch_url", "send_image", "send_image_url", "weather"}
 # Seuls outils permis quand ce n'est pas un owner qui parle : chercher une info, rien d'autre
+# Les seuls outils possibles pour un invité (sans aucune « act.* ») : la permission « web »
 GUEST_TOOLS = {"web_search", "fetch_url", "weather"}
+
+
+def allowed(person: Person | None, name: str) -> bool:
+    """Cette personne peut-elle faire utiliser cet outil à Rosalie ? (permissions de son rôle)"""
+    from libs.assistant.tools.permissions import TOOL_PERMISSIONS
+    if person is None:
+        return name in GUEST_TOOLS
+    permission = TOOL_PERMISSIONS.get(name)
+    if permission is None:   # outil sans permission déclarée : seulement « tout » (terminal)
+        return person.permissions is None and person.is_owner
+    return person.can(permission)
 
 
 def schemas(web_access: bool = True, guest: bool = False,
             disabled: tuple[str, ...] | frozenset[str] = (),
-            interfaces: set[str] | frozenset[str] | None = None) -> list[dict]:
-    """interfaces : interfaces lancées (None = toutes, pour les tests)."""
+            interfaces: set[str] | frozenset[str] | None = None,
+            person: Person | None = None) -> list[dict]:
+    """Outils proposés au modèle. person : seulement ceux que ses permissions autorisent
+    (sinon guest=True : seulement GUEST_TOOLS ; ni l'un ni l'autre : tous, pour les tests).
+    interfaces : interfaces lancées (None = toutes, pour les tests)."""
     return [t.schema() for t in TOOLS.values()
             if (web_access or t.name not in WEB_TOOLS) and (not guest or t.name in GUEST_TOOLS)
+            and (person is None or allowed(person, t.name))
             and t.name not in disabled
             and (t.requires is None or interfaces is None or t.requires in interfaces)]
 
@@ -102,9 +118,14 @@ async def execute(ctx: ToolContext, name: str, arguments: dict | str | None) -> 
     config = ctx.config
     if name in getattr(config, "disabled_tools", ()):
         return f"Erreur : l'outil « {name} » est désactivé (DISABLED_TOOLS)."
-    if name not in GUEST_TOOLS and not ctx.is_owner:
-        Log.warning(f"Tool {name} refused for non-owner {ctx.person.key}")
-        return "Erreur : seul mon créateur peut me demander ça."
+    if not allowed(ctx.person, name):
+        from libs.assistant.tools.permissions import TOOL_PERMISSIONS
+        from libs.models.role import PERMISSIONS
+        Log.warning(f"Tool {name} refused for {ctx.person.key} (permission)")
+        if not ctx.is_owner and name not in GUEST_TOOLS:
+            return "Erreur : seul mon créateur peut me demander ça."
+        label = PERMISSIONS.get(TOOL_PERMISSIONS.get(name, ""), ("cette action",))[0]
+        return f"Erreur : son rôle ne lui permet pas ça (permission « {label} »)."
     if name in WEB_TOOLS and not getattr(config, "web_access", True):
         return "Erreur : l'accès internet est désactivé (WEB_ACCESS=false)."
     if isinstance(arguments, str):

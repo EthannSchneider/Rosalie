@@ -4,7 +4,7 @@ from interfaces.discord.utils import conversation_key
 from libs.config import SettingError
 from libs.llm.ollama import OllamaError
 from libs.log import Log
-from interfaces.discord.utils import is_owner
+from interfaces.discord.utils import permissions_of, require
 
 
 async def _model_autocomplete(ctx: discord.AutocompleteContext) -> list[str]:
@@ -21,7 +21,8 @@ async def _persona_autocomplete(ctx: discord.AutocompleteContext) -> list[str]:
 
 
 class Admin(discord.Cog):
-    """Commandes /rosalie, réservées aux owners."""
+    """Commandes /rosalie. Il faut un compte lié avec au moins une permission autre que « chat » ;
+    chaque commande vérifie ensuite la sienne (modèle : settings, souvenirs : act.memory…)."""
 
     rosalie = discord.SlashCommandGroup("rosalie", "Contrôler Rosalie")
 
@@ -29,11 +30,11 @@ class Admin(discord.Cog):
         self.__bot = bot
 
     async def cog_check(self, ctx: discord.ApplicationContext) -> bool:
-        return await is_owner(self.__bot, ctx.author)
+        return bool(permissions_of(self.__bot, ctx.author) - {"chat"})
 
     async def cog_command_error(self, ctx: discord.ApplicationContext, error: Exception):
         if isinstance(error, discord.CheckFailure):
-            await ctx.respond("Je n'obéis qu'à mon créateur.", ephemeral=True)
+            await ctx.respond("Je n'obéis qu'à mon créateur (lie ton compte Discord sur le site).", ephemeral=True)
         else:
             raise error
 
@@ -65,6 +66,8 @@ class Admin(discord.Cog):
     @rosalie.command(name="model", description="Changer le modèle Ollama utilisé")
     async def model(self, ctx: discord.ApplicationContext,
                     name: discord.Option(str, "Nom du modèle Ollama", autocomplete=_model_autocomplete)):
+        if not await require(ctx, "settings"):
+            return
         try:
             self.__bot.rosalie.update_settings({"ollama_model": name})
         except SettingError as error:
@@ -93,6 +96,8 @@ class Admin(discord.Cog):
 
     @rosalie.command(name="agenda", description="Voir ses relances programmées")
     async def agenda(self, ctx: discord.ApplicationContext):
+        if not await require(ctx, "act.followups"):
+            return
         followups = self.__bot.rosalie.agenda.pending()
         text = "\n".join(f.line() for f in followups) or "Aucune relance prévue."
         await ctx.respond(text[:2000], ephemeral=True)
@@ -100,12 +105,16 @@ class Admin(discord.Cog):
     @rosalie.command(name="cancel", description="Annuler une relance programmée")
     async def cancel(self, ctx: discord.ApplicationContext,
                      followup_id: discord.Option(int, "Numéro de la relance (#id)")):
+        if not await require(ctx, "act.followups"):
+            return
         done = self.__bot.rosalie.agenda.cancel(followup_id)
         await ctx.respond("Relance annulée." if done else "Cette relance n'existe pas.", ephemeral=True)
 
     @rosalie.command(name="initiative", description="Lui permettre (ou non) de t'écrire d'elle-même")
     async def initiative(self, ctx: discord.ApplicationContext,
                          enabled: discord.Option(bool, "Activer l'initiative")):
+        if not await require(ctx, "settings"):
+            return
         self.__bot.rosalie.update_settings({"initiative": enabled})
         await ctx.respond("Je t'écrirai de moi-même quand j'en aurai envie." if enabled
                           else "D'accord, je ne t'écrirai plus de moi-même (les relances "
@@ -115,6 +124,8 @@ class Admin(discord.Cog):
     async def persona(self, ctx: discord.ApplicationContext,
                       name: discord.Option(str, "Nom de la personnalité", required=False,
                                            default=None, autocomplete=_persona_autocomplete)):
+        if not await require(ctx, "personas"):
+            return
         rosalie = self.__bot.rosalie
         if name:
             try:
@@ -131,6 +142,8 @@ class Admin(discord.Cog):
     async def memories(self, ctx: discord.ApplicationContext,
                        search: discord.Option(str, "Recherche (vide = les plus récents)",
                                               required=False, default=None)):
+        if not await require(ctx, "act.memory"):
+            return
         long_term = self.__bot.rosalie.long_term
         memories = await long_term.search(search, limit=15, min_score=0.3) if search \
             else long_term.recent(15)
@@ -140,6 +153,8 @@ class Admin(discord.Cog):
     @rosalie.command(name="forget", description="Effacer un souvenir par son numéro")
     async def forget(self, ctx: discord.ApplicationContext,
                      memory_id: discord.Option(int, "Numéro du souvenir (#id)")):
+        if not await require(ctx, "act.memory"):
+            return
         done = self.__bot.rosalie.long_term.forget(memory_id)
         await ctx.respond("Souvenir effacé." if done else "Ce souvenir n'existe pas.", ephemeral=True)
 

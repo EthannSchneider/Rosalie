@@ -3,7 +3,7 @@
 Utilisé par tout Rosalie : le site (connexion, rôles), Discord (à qui elle obéit), les commandes.
 
 Chaque compte peut être lié à son identifiant Discord : sur Discord, Rosalie obéit aux comptes
-liés dont le rôle a la permission « act » (c'est ce qui remplace l'ancien OWNER_IDS).
+liés dont le rôle a au moins une permission « act.* » (c'est ce qui remplace l'ancien OWNER_IDS).
 
 Premier lancement : tant qu'aucun compte n'existe, le site demande de créer le superadmin avec
 un code d'installation affiché dans la console (sinon le premier venu pourrait le prendre).
@@ -65,10 +65,14 @@ class Accounts:
             return session.scalar(select(User).where(User.username == username.strip()))
 
     def discord_owner_ids(self) -> frozenset[int]:
-        """Identifiants Discord à qui Rosalie obéit : comptes liés dont le rôle a « act »."""
+        """Identifiants Discord pour qui Rosalie agit : comptes liés avec au moins une « act.* »."""
         with self.db.read() as session:
             linked = session.scalars(select(User).where(User.discord_id.is_not(None))).unique()
-            return frozenset(int(user.discord_id) for user in linked if user.has("act"))
+            return frozenset(int(user.discord_id) for user in linked if user.is_owner)
+
+    def find_by_discord(self, discord_id: int | str) -> User | None:
+        with self.db.read() as session:
+            return session.scalar(select(User).where(User.discord_id == str(discord_id)))
 
     # --- écriture ---------------------------------------------------------------------------
     def create(self, username: str, password: str, role: str = "user",

@@ -1,7 +1,7 @@
 import discord
 
 from libs.log import Log
-from interfaces.discord.utils import is_owner
+from interfaces.discord.utils import require
 
 
 class Reload(discord.Cog):
@@ -11,8 +11,7 @@ class Reload(discord.Cog):
     @discord.slash_command(name="reload", description="Recharger les commandes Discord")
     async def reload(self, ctx: discord.ApplicationContext):
         Log.command(ctx.author.name + " is launching reload command")
-        if not await is_owner(self.__bot, ctx.author):
-            await ctx.respond("You don't have permission to use this command.", ephemeral=True)
+        if not await require(ctx, "settings"):
             return
         for extension in list(self.__bot.extensions):
             self.__bot.reload_extension(extension)

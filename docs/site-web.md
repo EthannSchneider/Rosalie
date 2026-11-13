@@ -36,16 +36,47 @@ fixées par le code (c'est lui qui les vérifie) ; les rôles se gèrent sur la 
 
 | Permission | Ce qu'elle autorise |
 |---|---|
+| **Discussion** | |
 | `chat` | utiliser le chat web |
-| `act` | faire agir Rosalie : outils, souvenirs, code (avec confirmation) — sur le site **et** sur Discord si l'identifiant Discord est lié. Sans elle : discussion et recherche seulement, comme un invité |
+| `web` | recherche web : chercher sur internet, lire une page, la météo (si l'accès internet est activé). Ne rend pas « owner » |
+| **Faire agir Rosalie** | sur le site **et** sur Discord si l'identifiant Discord est lié : |
+| `act.memory` | souvenirs : retenir, retrouver, oublier ; elle prend des notes et s'en sert dans la conversation |
+| `act.followups` | relances et messages : `say`, programmer / annuler une relance |
+| `act.images` | chercher et envoyer des photos |
+| `act.discord_read` | Discord, lire : serveurs, salons, membres, rôles ; lire et chercher des messages |
+| `act.discord_write` | Discord, écrire : envoyer (salon, DM), réagir, épingler, modifier, sondages, fils |
+| `act.discord_manage` | Discord, gérer le serveur : salons, statut, invitations, purger / supprimer des messages |
+| `act.discord_moderate` | Discord, modérer : rôles, expulser, bannir, exclure, surnoms |
+| `act.code` | exécuter du code (toujours avec confirmation) |
+| **Administration** | |
 | `personas` | créer, modifier et choisir les personnalités |
 | `settings` | tous les réglages de Rosalie |
 | `users` | gérer les utilisateurs |
 | `roles` | gérer les rôles |
 
+Avec **au moins une** permission « Faire agir Rosalie », elle traite la personne comme son
+créateur (conversation de créateur) ; elle ne lui propose et n'exécute que les outils que ces
+permissions couvrent (table `libs/assistant/tools/permissions.py`). Sans aucune : invité, il
+discute, et fait faire des recherches web s'il a `web`.
+
+Les personnes **sans compte** (inconnus sur Discord) n'ont pas de rôle : elles discutent (si
+*Discuter avec les autres* est activé) et ont la recherche web si le réglage Discord
+**Recherche web pour les invités** (`guest_web`, activé par défaut) le permet.
+
 Rôles de départ : **`superadmin`** (verrouillé : toujours toutes les permissions, même celles
-ajoutées plus tard), **`admin`** (`chat`, `act`), **`user`** (`chat`). Les deux derniers se
-modifient ; crée les tiens (ex : un « Éditeur » avec seulement `personas`).
+ajoutées plus tard), **`admin`** (`chat`, `web` + toutes les `act.*`), **`user`** (`chat`, `web`). Les deux
+derniers se modifient ; crée les tiens (ex : un « Modérateur » avec `act.discord_read` +
+`act.discord_moderate`, un « Éditeur » avec seulement `personas`). Sur la page Rôles, « tout /
+aucune » coche un groupe d'un coup.
+
+Sur Discord, les commandes `/rosalie` demandent un compte lié avec au moins une permission
+autre que `chat`, puis chacune la sienne : `model`, `initiative`, `/reload` → `settings` ;
+`persona` → `personas` ; `memories`, `forget` → `act.memory` ; `agenda`, `cancel` →
+`act.followups` ; ⭐ et *Corriger* → au moins une `act.*`.
+
+Les migrations `main 0004` (l'ancienne permission `act` devient toutes les `act.*`) et `0005`
+(`web` ajoutée à tous les rôles, puisqu'elle était ouverte à tous avant) gardent à chacun
+exactement les mêmes droits.
 
 Garde-fous contre l'élévation de droits :
 - on ne peut donner un rôle — ou ajouter/retirer une permission à un rôle — que si on a soi-même
@@ -60,19 +91,19 @@ l'attribuer — réserve ces deux permissions à des gens de confiance.
 
 Il n'y a plus de liste d'owners : **chaque compte peut être lié à son identifiant Discord**
 (*Mon compte*, la page *Utilisateurs*, ou `python bot.py users discord <nom> <id>`).
-Sur Discord, Rosalie obéit aux comptes liés dont le **rôle a la permission `act`** : commandes
-`/rosalie`, actions, boutons de confirmation, ⭐. Sans `act`, un compte lié reste un invité ; un
+Sur Discord, Rosalie agit pour les comptes liés selon **les permissions `act.*` de leur rôle** :
+outils, boutons de confirmation, ⭐. Sans aucune `act.*`, un compte lié reste un invité ; un
 identifiant ne peut être lié qu'à un seul compte.
 
 Identifiant Discord : clic droit sur ton profil → *Copier l'identifiant* (mode développeur :
 Paramètres → Avancés).
 
 **Transition depuis `OWNER_IDS`** : les anciens owners (du `.env` ou du réglage `owner_ids`)
-sont gardés de côté et restent valables **tant qu'aucun compte avec `act` n'est lié** — Rosalie
-le signale au démarrage, et *Mon compte* propose de lier l'ancien identifiant en un clic. Dès
-qu'un compte avec `act` est lié, ils sont ignorés.
+sont gardés de côté (avec toutes les permissions) **tant qu'aucun compte avec une `act.*` n'est
+lié** — Rosalie le signale au démarrage, et *Mon compte* propose de lier l'ancien identifiant
+en un clic. Dès que c'est fait, ils sont ignorés.
 
-Un compte sans `act` est soumis au réglage *Discuter avec les autres* (`public_replies`) et au
+Un compte sans `act.*` est soumis au réglage *Discuter avec les autres* (`public_replies`) et au
 délai anti-spam, comme les invités Discord.
 
 ## Le chat
@@ -106,7 +137,7 @@ python bot.py users delete lea
 python bot.py roles                             # rôles, permissions, nombre de comptes
 python bot.py roles permissions                 # ce que permet chaque permission
 python bot.py roles add editeur "Éditeur" personas
-python bot.py roles set admin chat,act,personas
+python bot.py roles set moderateur chat,act.discord_read,act.discord_moderate
 python bot.py roles delete editeur              # seulement s'il n'est plus attribué
 ```
 
@@ -171,7 +202,7 @@ Le serveur renvoie `index.html` pour toute adresse qui n'est ni un fichier ni l'
 - Les requêtes venant d'un autre site sont refusées (Origin, `Sec-Fetch-Site`, JSON obligatoire
   pour écrire), et la CSP interdit tout script extérieur ou `eval` ; en écoute locale, l'en-tête Host doit être local (contre le DNS rebinding).
 - Les secrets des réglages (token Discord, clé Brave) ne sont jamais envoyés au navigateur.
-- Lier un identifiant Discord à un compte avec `act` donne à cette personne Discord les droits de
+- Lier un identifiant Discord à un compte avec des `act.*` donne à cette personne Discord les droits de
   Rosalie : chaque compte ne peut lier que le sien (*Mon compte*) ; qui a `users` peut corriger
   les autres (*Utilisateurs*).
 - Par défaut le site n'écoute que sur `127.0.0.1`. Pour l'ouvrir au réseau :

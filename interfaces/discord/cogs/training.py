@@ -65,7 +65,7 @@ class Training(discord.Cog):
 
     @discord.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        if str(payload.emoji) not in STAR_EMOJIS or payload.user_id not in self.bot.rosalie.discord_owners():
+        if str(payload.emoji) not in STAR_EMOJIS or payload.user_id not in self.bot.rosalie.discord_owners():   # owners (act.*)
             return
         channel = self.bot.get_channel(payload.channel_id) or await self.bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)

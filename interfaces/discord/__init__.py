@@ -13,6 +13,7 @@ from interfaces.discord.utils import message_text, place_name
 from libs.core.interface import Interface
 from libs.core.types import Conversation, Incoming, OutgoingFile, Person, Sent, make_key
 from libs.log import Log
+from libs.models.role import acts
 
 COGS = ("events", "admin", "training", "reload")
 
@@ -47,7 +48,7 @@ class DiscordInterface(Interface):
                         "python bot.py settings set discord_token), puis redémarre Rosalie")
             return
         if not self.rosalie.discord_owners():
-            Log.warning("Discord : aucun compte avec la permission « act » n'est lié à un identifiant Discord, elle n'y obéira "
+            Log.warning("Discord : aucun compte qui peut la faire agir n'est lié à un identifiant Discord, elle n'y obéira "
                         "à personne (site web > Mon compte, ou python bot.py users discord <nom> <id>)")
         await self.client.start(config.discord_token)
 
@@ -66,8 +67,9 @@ class DiscordInterface(Interface):
 
     # --- Discord -> cœur ------------------------------------------------------------------
     def person_from(self, user: discord.abc.User) -> Person:
+        permissions = self.rosalie.discord_permissions(user.id)
         return Person("discord", user.id, user.name, user.display_name,
-                      is_owner=user.id in self.rosalie.discord_owners(), native=user)
+                      is_owner=acts(permissions), native=user, permissions=permissions)
 
     def conversation_from(self, channel, other: discord.abc.User | None = None) -> Conversation:
         private = isinstance(channel, discord.DMChannel)

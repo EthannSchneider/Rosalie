@@ -41,14 +41,24 @@ export default function RolesPage() {
       </p>
       <Card as="details" className="mb-5 px-5 py-3">
         <summary className="cursor-pointer font-medium">Ce que permet chaque permission</summary>
-        <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
-          {data.permissions.map((p) => (
-            <div key={p.name} className="contents">
-              <dt className="font-medium">{p.label} <code className="text-xs text-stone-400">{p.name}</code></dt>
-              <dd className="text-stone-500 dark:text-stone-400">{p.description}</dd>
-            </div>
-          ))}
-        </dl>
+        {groupsOf(data.permissions).map(([group, list]) => (
+          <div key={group} className="mt-3">
+            <p className="mb-1 text-xs font-semibold tracking-wide text-stone-400 uppercase">{group}</p>
+            <dl className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
+              {list.map((p) => (
+                <div key={p.name} className="contents">
+                  <dt className="font-medium">{p.label} <code className="text-xs text-stone-400">{p.name}</code></dt>
+                  <dd className="text-stone-500 dark:text-stone-400">{p.description}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
+          Avec au moins une permission « Faire agir Rosalie », elle traite la personne comme sa créatrice ou son créateur ;
+          sans aucune, comme une invitée : elle discute, et fait des recherches web seulement avec « Recherche web ». Les
+          personnes sans compte (inconnus sur Discord) dépendent du réglage Discord « Recherche web pour les invités ».
+        </p>
       </Card>
       <div className="space-y-4">
         {data.roles.map((role) => <RoleCard key={role.name} role={role} permissions={data.permissions} run={run} />)}
@@ -59,34 +69,66 @@ export default function RolesPage() {
   );
 }
 
-// Cases compactes ; la description de chaque permission est en info-bulle (et dans la légende)
+// Permissions groupées (Site, Faire agir Rosalie, Administration) en cases compactes ; la
+// description est en info-bulle et dans la légende. « Tout » coche / décoche un groupe.
+function groupsOf(permissions) {
+  const groups = new Map();
+  for (const p of permissions) groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
+  return [...groups];
+}
+
 function PermissionList({ permissions, value, onChange, disabled }) {
   const { session } = useSession();
+  const mine = (name) => session.user.permissions.includes(name);
   return (
-    <div role="group" aria-label="Permissions" className="flex flex-wrap gap-2">
-      {permissions.map((p) => {
-        const mine = session.user.permissions.includes(p.name);
-        const checked = value.includes(p.name);
-        const off = disabled || !mine;
+    <div className="space-y-3">
+      {groupsOf(permissions).map(([group, list]) => {
+        const editable = list.filter((p) => !disabled && mine(p.name));
+        const all = list.every((p) => value.includes(p.name));
         return (
-          <label
-            key={p.name}
-            title={off && !disabled ? `${p.description} (tu n'as pas cette permission)` : p.description}
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
-              checked
-                ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200"
-                : "border-stone-200 dark:border-stone-700"
-            } ${off ? "opacity-60" : "cursor-pointer hover:border-rose-400"}`}
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-rose-600"
-              checked={checked}
-              disabled={off}
-              onChange={(event) => onChange(event.target.checked ? [...value, p.name] : value.filter((v) => v !== p.name))}
-            />
-            {p.label}
-          </label>
+          <div key={group} role="group" aria-label={group}>
+            <div className="mb-1.5 flex items-center gap-3">
+              <span className="text-xs font-semibold tracking-wide text-stone-400 uppercase">{group}</span>
+              {list.length > 1 && editable.length > 0 && (
+                <button
+                  type="button"
+                  className="text-xs text-rose-600 hover:underline dark:text-rose-400"
+                  onClick={() => {
+                    const names = editable.map((p) => p.name);
+                    onChange(all ? value.filter((v) => !names.includes(v)) : [...new Set([...value, ...names])]);
+                  }}
+                >
+                  {all ? "aucune" : "tout"}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {list.map((p) => {
+                const checked = value.includes(p.name);
+                const off = disabled || !mine(p.name);
+                return (
+                  <label
+                    key={p.name}
+                    title={off && !disabled ? `${p.description} (tu n'as pas cette permission)` : p.description}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
+                      checked
+                        ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200"
+                        : "border-stone-200 dark:border-stone-700"
+                    } ${off ? "opacity-60" : "cursor-pointer hover:border-rose-400"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-rose-600"
+                      checked={checked}
+                      disabled={off}
+                      onChange={(event) => onChange(event.target.checked ? [...value, p.name] : value.filter((v) => v !== p.name))}
+                    />
+                    {p.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         );
       })}
     </div>

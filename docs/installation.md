@@ -25,7 +25,7 @@ d'installation affiché dans la console ([détails](site-web.md)). Ensuite :
 1. *Réglages → Discord* : le token du bot ;
 2. *Mon compte* : ton identifiant Discord (clic droit sur ton profil → *Copier l'identifiant*,
    mode développeur requis). Sur Discord, Rosalie n'agit que pour les comptes liés dont le rôle
-   a la permission `act` ; les autres peuvent seulement discuter (`public_replies`).
+   a au moins une permission `act.*` ; les autres peuvent seulement discuter (`public_replies`).
 
 Ou dans le terminal :
 

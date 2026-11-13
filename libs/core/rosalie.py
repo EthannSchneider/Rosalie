@@ -103,8 +103,19 @@ class Rosalie:
             self.__apply(Config.load(self.store, self.__config.storage_dir))
         return self.__config
 
+    def discord_permissions(self, discord_id: int) -> frozenset[str]:
+        """Ce que cette personne Discord peut lui faire faire : les permissions du compte lié
+        à son identifiant (anciens OWNER_IDS : tout, tant qu'aucun owner n'est lié)."""
+        user = self.accounts.find_by_discord(discord_id)
+        if user is not None:
+            return user.permissions
+        if discord_id in self.discord_owners():   # transition : ancien OWNER_IDS
+            from libs.models.role import PERMISSIONS
+            return frozenset(PERMISSIONS)
+        return frozenset({"web"}) if self.config.guest_web else frozenset()   # inconnu : invité
+
     def discord_owners(self) -> frozenset[int]:
-        """Les identifiants Discord à qui elle obéit : comptes liés dont le rôle a « act ».
+        """Les identifiants Discord à qui elle obéit : comptes liés dont le rôle a au moins une « act.* ».
         Tant qu'aucun n'est lié, les anciens OWNER_IDS restent valables (transition)."""
         linked = self.accounts.discord_owner_ids()
         if linked:
@@ -248,7 +259,7 @@ class Rosalie:
             return None
         self.decider.mark_active(conversation.key, author.key)
 
-        if reply is not None and author.is_owner:   # prise de notes, sans bloquer
+        if reply is not None and author.can("act.memory"):   # prise de notes, sans bloquer
             task = asyncio.create_task(extract_memories(
                 self.llm, self.config.decider_model, self.long_term,
                 author.display_name, incoming.text, reply))
@@ -323,7 +334,7 @@ class Rosalie:
             trace += result.trace
             errors += result.errors
             reply = clean_reply(result.text, self.name)
-            block = extract_code(reply) if person.is_owner and config.code_exec else None
+            block = extract_code(reply) if person.can("act.code") and config.code_exec else None
             if block is None or runs >= config.code_max_runs:
                 if not is_silence(reply):
                     return reply, trace, errors
@@ -365,14 +376,18 @@ class Rosalie:
     async def system_prompt(self, conversation: Conversation, person: Person,
                             query: str | None = None) -> str:
         """Prompt système : persona + contexte + souvenirs (importants + liés au message).
-        Pour un non-owner : aucun souvenir, aucune action."""
+        Pour un non-owner : aucun souvenir, aucune action. Pour un owner : seulement ce que ses
+        permissions autorisent (souvenirs : act.memory, code : act.code, relances : act.followups)."""
         interface = self.interface_of(conversation)
         if not person.is_owner:
             return build_system_prompt(self.persona.text, self.name, conversation.place,
                                        speaker=person.display_name, guest=True,
-                                       web=self.config.web_access, via=interface.label)
-        memories = {m.id: m for m in self.long_term.core()}
-        related = await self.long_term.search(query, limit=5) if query else []
+                                       web=self.config.web_access and person.can("web"),
+                                       via=interface.label)
+        memories, related = {}, []
+        if person.can("act.memory"):
+            memories = {m.id: m for m in self.long_term.core()}
+            related = await self.long_term.search(query, limit=5) if query else []
         for memory in related:
             memories.setdefault(memory.id, memory)
         context = [line for i in self.interfaces.values() for line in i.prompt_context()]
@@ -381,10 +396,11 @@ class Rosalie:
             speaker=person.display_name,
             context=context,
             memories=[memory.line() for memory in memories.values()],
-            nothing_related=bool(query) and not related,
-            followups=[f.line() for f in self.agenda.pending(conversation.key)],
+            nothing_related=person.can("act.memory") and bool(query) and not related,
+            followups=[f.line() for f in self.agenda.pending(conversation.key)]
+            if person.can("act.followups") else [],
             code_env=environment_line(self.config.storage_dir / "workspace")
-            if self.config.code_exec else None,
+            if self.config.code_exec and person.can("act.code") else None,
             via=interface.label,
         )
 

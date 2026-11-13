@@ -6,6 +6,11 @@ export function can(user, permission) {
   return Boolean(user) && wanted.some((p) => user.permissions.includes(p));
 }
 
+/** Rosalie agit-elle pour ce compte ? (au moins une permission « act.* ») */
+export function acts(user) {
+  return Boolean(user) && user.permissions.some((p) => p.startsWith("act."));
+}
+
 /** Peut-on attribuer ce rôle ? (mêmes règles que le serveur : controllers/guards.py) */
 export function canAssign(user, role) {
   if (role.name === "superadmin" && !user.superadmin) return false;

@@ -1,7 +1,7 @@
 """Interface web : le site de Rosalie (panneau de réglages + chat), servi par libs/webui.
 
 Chaque compte (libs/models/) a sa conversation privée avec elle : clé « web:<id> ».
-Un compte dont le rôle a la permission « act » est son créateur (outils, souvenirs, code
+Un compte dont le rôle a au moins une permission « act.* » est son créateur (outils, souvenirs, code
 confirmé) ; sans elle, il discute seulement, comme un invité sur Discord.
 
 Le site lui-même (API MVC /api/v1, React) est dans libs/webui ; cette interface fait le lien
@@ -67,7 +67,7 @@ class WebInterface(Interface):
     # --- comptes -> cœur ----------------------------------------------------------------
     def person_of(self, user: User) -> Person:
         return Person(self.name, user.id, user.username, user.username, is_owner=user.is_owner,
-                      native=user)
+                      native=user, permissions=user.permissions)
 
     def conversation_of(self, user: User) -> Conversation:
         return Conversation(self.name, user.id, f"en tête-à-tête avec {user.username}",
@@ -105,7 +105,7 @@ class WebInterface(Interface):
         if pending is None or pending[1] != self.key_of(user):
             raise SettingError("cette demande n'attend plus de réponse")
         if not user.is_owner:
-            raise SettingError("il faut la permission « Faire agir Rosalie » pour confirmer")
+            raise SettingError("ton rôle ne te permet pas de la faire agir : tu ne peux pas confirmer")
         future = pending[0]
         self.__loop().call_soon_threadsafe(lambda: future.done() or future.set_result(accept))
 

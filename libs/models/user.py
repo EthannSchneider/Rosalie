@@ -1,7 +1,7 @@
 """Modèle : un compte, et ses sessions de connexion.
 
 Ce qu'un compte peut faire dépend des permissions de son rôle (libs/models/role.py) :
-`user.has("act")`, `user.has("settings")`… Jamais de test sur le nom du rôle.
+`user.has("act.code")`, `user.has("settings")`… Jamais de test sur le nom du rôle.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from sqlalchemy import Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from libs.models.bases import MainBase
-from libs.models.role import PERMISSIONS, SUPERADMIN, Role
+from libs.models.role import PERMISSIONS, SUPERADMIN, Role, acts
 
 MIN_PASSWORD = 8
 USERNAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,31}$")
@@ -57,8 +57,8 @@ class User(MainBase):
 
     @property
     def is_owner(self) -> bool:
-        """« Owner » de Rosalie : elle agit pour lui (chat web, Discord)."""
-        return self.has("act")
+        """« Owner » de Rosalie : elle agit pour lui (au moins une permission « act.* »)."""
+        return acts(self.permissions)
 
 
 class LoginSession(MainBase):

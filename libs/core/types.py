@@ -23,12 +23,20 @@ class Person:
     id: Any                    # id natif (int pour Discord, « local » pour le terminal…)
     name: str                  # identifiant (pseudo)
     display_name: str          # nom affiché
-    is_owner: bool = False     # son créateur : seul à pouvoir la faire agir
+    is_owner: bool = False     # elle peut agir pour lui (au moins une permission « act.* »)
     native: Any = None         # objet de l'interface (discord.User…)
+    # Ce qu'elle peut faire pour lui (libs/models/role.py : web, act.memory, act.code…).
+    # None = tout si is_owner (terminal : c'est ta machine), sinon invité : recherche web seulement.
+    permissions: frozenset[str] | None = None
 
     @property
     def key(self) -> str:
         return make_key(self.interface, self.id)
+
+    def can(self, permission: str) -> bool:
+        if self.permissions is None:
+            return self.is_owner or permission == "web"
+        return permission in self.permissions
 
     def __str__(self) -> str:
         return self.name

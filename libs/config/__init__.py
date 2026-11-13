@@ -49,6 +49,7 @@ class Config:
     # Discord
     discord_token: str                 # (à qui elle obéit : comptes du site liés à Discord)
     public_replies: bool               # les autres : simple discussion (aucune action, aucun souvenir)
+    guest_web: bool                    # les inconnus (sans compte) peuvent faire faire des recherches web
     public_cooldown: int               # secondes minimum entre deux réponses à une même personne
     channel_ids: frozenset[int]        # salons Discord où Rosalie répond à tout
 

@@ -9,7 +9,7 @@ import Card from "../../components/ui/Card.jsx";
 import { hintClass, inputClass } from "../../components/ui/styles.js";
 import { useSession } from "../../context/SessionContext.jsx";
 import { useToast } from "../../context/ToastContext.jsx";
-import { can } from "../../lib/permissions.js";
+import { acts } from "../../lib/permissions.js";
 
 export default function AccountPage() {
   const { session } = useSession();
@@ -83,7 +83,7 @@ function DiscordCard() {
       <p className={hintClass}>
         Ton identifiant Discord : clic droit sur ton profil → Copier l'identifiant (active le mode développeur dans Paramètres →
         Avancés).{" "}
-        {can(user, "act")
+        {acts(user)
           ? "Sur Discord, Rosalie t'obéira (commandes /rosalie, actions, boutons de confirmation)."
           : "Sur Discord, elle te reconnaîtra mais ne fera que discuter (ton rôle ne lui permet pas d'agir pour toi)."}
       </p>

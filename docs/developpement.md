@@ -47,7 +47,7 @@ class TelegramInterface(Interface):
 
 À savoir :
 
-- `Person.is_owner` est décidé par l'interface (Discord : comptes liés à cet identifiant dont le rôle a la permission `act`, `rosalie.discord_owners()` ; web : `user.has("act")` ; terminal : toujours).
+- `Person.is_owner` est décidé par l'interface (Discord : comptes liés à cet identifiant dont le rôle a au moins une permission `act.*`, `rosalie.discord_owners()` ; web : `user.has("act")` ; terminal : toujours).
   C'est la seule barrière entre « discuter » et « agir » : sois strict.
 - `Conversation.private=True` pour un tête-à-tête : elle répond toujours.
 - Facultatif : `typing()` (« écrit… »), `react()`, `prompt_context()` (lignes ajoutées au

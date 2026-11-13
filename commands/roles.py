@@ -49,8 +49,12 @@ def main(args: list[str], accounts: Accounts, out=None) -> int:
             say(f"  {role.name:<14} {role.label:<16} {counts.get(role.name, 0):>3} compte(s)  "
                 f"{', '.join(sorted(role.granted, key=list(PERMISSIONS).index)) or '(aucune)'}{lock}")
     elif command == "permissions" and not rest:
-        for name, (label, description) in PERMISSIONS.items():
-            say(f"  {name:<10} {label} — {description}")
+        current = None
+        for name, (label, description, group) in PERMISSIONS.items():
+            if group != current:
+                current = group
+                say(f"\n[{group}]")
+            say(f"  {name:<22} {label} — {description}")
     elif command == "add" and len(rest) in (2, 3):
         role = roles.create(rest[0], rest[1], _perms(rest[2]) if len(rest) == 3 else [])
         say(f"✅ Rôle « {role.name} » créé : {', '.join(role.permissions) or '(aucune permission)'}")

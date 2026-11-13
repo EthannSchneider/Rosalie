@@ -2,7 +2,11 @@
 
 Les outils marqués **Discord** ne sont disponibles que si l'interface Discord tourne — mais
 depuis n'importe quelle interface. La page *Réglages → Outils* du site web (ou
-`python bot.py settings tools disable …`) en retire : chaque outil occupe ~100 tokens du contexte. Les actions destructrices demandent une **confirmation** de son créateur.
+`python bot.py settings tools disable …`) en retire : chaque outil occupe ~100 tokens du contexte. Les actions destructrices demandent une **confirmation** de son créateur. Chaque outil
+demande une permission `act.*` du rôle de la personne (souvenirs, relances, photos, Discord
+lire / écrire / gérer / modérer, code) ; recherche web, lecture de pages et météo demandent la
+permission `web` (et, pour les inconnus sur Discord, le réglage *Recherche web pour les
+invités*). Voir [Site web → Rôles](site-web.md#rôles-et-permissions).
 
 ## Partout
 

@@ -116,13 +116,19 @@ Points clés :
   voulu (le décideur reçoit `lambda: self.config`). Les secrets ne sortent jamais vers le
   navigateur ni les logs (`Config.__repr__`, `display()` masquent).
 - **Rôles et permissions** : un compte a un rôle (table `roles`), un rôle a des permissions
-  (`PERMISSIONS` dans `libs/models/role.py` : chat, act, personas, settings, users, roles). Le code
-  teste TOUJOURS `user.has("…")`, jamais un nom de rôle (sauf `superadmin`, verrouillé, qui a
-  tout). `act` = owner (chat web et Discord via l'identifiant lié ; il n'y a plus d'`owner_ids`).
+  (`PERMISSIONS` dans `libs/models/role.py` : chat, web ; act.memory, act.followups, act.images,
+  act.discord_read/write/manage/moderate, act.code ; personas, settings, users, roles). Le code
+  teste TOUJOURS `user.has("…")` / `person.can("…")`, jamais un nom de rôle (sauf `superadmin`,
+  verrouillé, qui a tout). Au moins une `act.*` = owner (`is_owner`) ; chaque outil demande la
+  sienne (`libs/assistant/tools/permissions.py`, un test vérifie qu'aucun outil n'est oublié) ;
+  souvenirs dans le prompt / prise de notes : act.memory ; code : act.code. `Person.permissions`
+  est transmis par chaque interface (None = tout si owner — terminal —, sinon « web » seulement).
+  `web` (recherche, pages, météo) n'est pas une act.* : elle ne rend pas owner. Inconnus sur
+  Discord (sans compte) : « web » selon le réglage guest_web.
   Routes : `access="permission"` (ou tuple) dans `api/v1.py`. Anti-élévation :
   `controllers/guards.py` (on ne donne que ce qu'on a ; seul un superadmin touche un superadmin).
   Nouvelle permission = une entrée dans `PERMISSIONS` (+ docs) ; superadmin l'a d'office.
-  Anciens `OWNER_IDS` gardés en méta (`legacy_owner_ids`), valables tant qu'aucun compte `act` n'est lié. Premier compte via le code d'installation de la
+  Anciens `OWNER_IDS` gardés en méta (`legacy_owner_ids`), valables tant qu'aucun compte avec une `act.*` n'est lié. Premier compte via le code d'installation de la
   console (ou `python bot.py users add`). Cookie HttpOnly SameSite=Strict, Origin vérifiée, JSON
   obligatoire pour écrire, Host local exigé en écoute locale, CSP stricte (pas d'`eval`).
 - **API** : tout sous `/api/v1` ; une route = une ligne dans `libs/webui/api/v1.py` (méthode,
@@ -169,7 +175,8 @@ Points clés :
 
 - **Une interface** : sous-classe d'`Interface` dans `interfaces/<nom>/`, l'enregistrer dans
   `interfaces/AVAILABLE` (lancée par défaut ; si elle ne peut pas démarrer, warning + fin de `start()`). Squelette dans `docs/developpement.md`.
-- **Un outil** : fonction `@tool` dans le bon fichier de `libs/assistant/tools/` (ou
+- **Un outil** : fonction `@tool` + sa permission dans `libs/assistant/tools/permissions.py`
+  (sauf s'il est ouvert à tous : GUEST_TOOLS), dans le bon fichier de `libs/assistant/tools/` (ou
   `interfaces/discord/tools/` avec `@discord_tool`), un test dans `tests/`, une ligne dans
   `docs/fonctionnalites.md`.
 - Toujours : `python bot.py test` vert avant de rendre la main. Rien n'est testé contre le vrai

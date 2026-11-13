@@ -55,7 +55,7 @@ class MigrationsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Accounts(Path(tmp) / "rosalie.sqlite3").close()
             db = sqlite3.connect(Path(tmp) / "rosalie.sqlite3")
-            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0003")
+            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0005")
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             self.assertIn("discord_id", columns)
             schema = db.execute("SELECT sql FROM sqlite_master WHERE name = 'users'").fetchone()[0]
@@ -125,8 +125,10 @@ class RolesTest(unittest.TestCase):
     def test_default_roles(self):
         boss = self.accounts.create("boss", "motdepasse", "superadmin")
         lea = self.accounts.create("lea", "motdepasse", "user")
-        self.assertTrue(all(boss.has(p) for p in ("chat", "act", "personas", "settings", "users", "roles")))
-        self.assertEqual(lea.permissions, frozenset({"chat"}))
+        from libs.models.role import PERMISSIONS
+        self.assertTrue(all(boss.has(p) for p in PERMISSIONS))
+        self.assertTrue(boss.is_owner)
+        self.assertEqual(lea.permissions, frozenset({"chat", "web"}))
         self.assertFalse(lea.is_owner)
 
     def test_manage_roles(self):
@@ -142,7 +144,7 @@ class RolesTest(unittest.TestCase):
         self.assertTrue(user.has("personas"))
         with self.assertRaises(SettingError):
             roles.delete("editeur")                                    # encore attribué
-        roles.update("editeur", permissions=["chat", "act"])
+        roles.update("editeur", permissions=["chat", "act.memory"])
         self.assertTrue(self.accounts.get(user.id).is_owner)          # pris en compte tout de suite
         self.accounts.set_role(user.id, "user")
         roles.delete("editeur")
@@ -151,8 +153,19 @@ class RolesTest(unittest.TestCase):
     def test_discord_owners_follow_permissions(self):
         self.accounts.create("bot", "motdepasse", "user", "123456789012345678")
         self.assertEqual(self.accounts.discord_owner_ids(), frozenset())
-        self.roles.update("user", permissions=["chat", "act"])
+        self.roles.update("user", permissions=["chat", "act.discord_read"])
         self.assertEqual(self.accounts.discord_owner_ids(), frozenset({123456789012345678}))
+
+    def test_act_permissions_are_detailed(self):
+        """L'ancien « act » est remplacé par act.memory, act.code… ; admin les a toutes."""
+        from libs.models.role import ACT_PERMISSIONS
+        admin = self.roles.get("admin")
+        self.assertEqual(set(admin.permissions), {"chat", "web", *ACT_PERMISSIONS})
+        self.roles.create("souvenirs", "Souvenirs", ["chat", "act.memory"])
+        user = self.accounts.create("mia", "motdepasse", "souvenirs")
+        self.assertTrue(user.is_owner)                      # au moins une act.* : owner
+        self.assertTrue(user.has("act.memory"))
+        self.assertFalse(user.has("act.code"))
 
     def test_roles_command(self):
         import io
@@ -164,6 +177,35 @@ class RolesTest(unittest.TestCase):
         main([], self.accounts, out)
         self.assertIn("lecteur", out.getvalue())
         self.assertEqual(main(["delete", "lecteur"], self.accounts, out), 0)
+
+
+class ActMigrationTest(unittest.TestCase):
+    def test_old_act_permission_is_expanded(self):
+        """Base à la révision 0003 (permission « act ») -> 0004 : toutes les act.*."""
+        import json
+        import sqlite3
+        from alembic import command
+        from alembic.config import Config as AlembicConfig
+        from libs.db.database import MIGRATIONS_DIR, make_engine
+        from libs.models.role import ACT_PERMISSIONS
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rosalie.sqlite3"
+            engine = make_engine(path)
+            config = AlembicConfig()
+            config.set_main_option("script_location", str(MIGRATIONS_DIR / "main"))
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.upgrade(config, "0003")
+            engine.dispose()
+            db = sqlite3.connect(path)
+            db.execute("INSERT INTO roles VALUES ('modero', 'Modéro', '', '[\"chat\", \"act\", \"users\"]', 0, 0)")
+            db.commit()
+            db.close()
+            accounts = Accounts(path)                 # applique 0004
+            # 0004 : act -> act.* ; 0005 : + web (ouverte à tous avant)
+            self.assertEqual(accounts.roles.get("modero").permissions, ["chat", "web", *ACT_PERMISSIONS, "users"])
+            self.assertEqual(accounts.roles.get("user").permissions, ["chat", "web"])
+            accounts.close()
 
 
 class AccountsTest(unittest.TestCase):

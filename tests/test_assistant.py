@@ -399,3 +399,40 @@ class ListMembersTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ToolPermissionsTest(unittest.TestCase):
+    def test_every_tool_has_a_permission(self):
+        """Tout outil doit dire quelle permission il demande (sinon refusé à tous)."""
+        from libs.assistant.tools import GUEST_TOOLS, TOOLS
+        from libs.assistant.tools.permissions import TOOL_PERMISSIONS
+        from libs.models.role import ACT_PERMISSIONS, PERMISSIONS
+        self.assertEqual([n for n in TOOLS if n not in TOOL_PERMISSIONS], [])
+        self.assertEqual([p for p in TOOL_PERMISSIONS.values() if p not in PERMISSIONS], [])
+        # les outils d'invité sont exactement ceux de « web », qui n'est pas une act.*
+        self.assertEqual({n for n, p in TOOL_PERMISSIONS.items() if p == "web"}, GUEST_TOOLS)
+        self.assertNotIn("web", ACT_PERMISSIONS)
+
+    def test_tools_follow_the_role_permissions(self):
+        import asyncio
+        from libs.assistant.tools import execute, schemas
+        from libs.core.types import Person
+        person = Person("web", 1, "mia", "Mia", is_owner=True, permissions=frozenset({"chat", "act.memory"}))
+        names = {s["function"]["name"] for s in schemas(person=person)}
+        self.assertIn("remember", names)
+        self.assertNotIn("web_search", names)              # pas la permission « web »
+        self.assertNotIn("send_message", names)
+        searcher = Person("web", 2, "sam", "Sam", permissions=frozenset({"chat", "web"}))
+        self.assertEqual({s["function"]["name"] for s in schemas(person=searcher)}, tools.GUEST_TOOLS)
+        self.assertFalse(searcher.is_owner)
+        guest = Person("discord", 3, "x", "X")             # inconnu, permissions non précisées
+        self.assertTrue(guest.can("web"))
+        self.assertFalse(guest.can("act.memory"))
+        self.assertNotIn("kick_member", names)
+        ctx = make_ctx()
+        ctx.person = person
+        result = asyncio.run(execute(ctx, "send_message", {"channel": "x", "content": "y"}))
+        self.assertIn("Discord : écrire", result)
+        everything = Person("terminal", "me", "me", "Me", is_owner=True)   # permissions=None : tout
+        self.assertTrue(everything.can("act.code"))
+        self.assertEqual(len(schemas(person=everything)), len(schemas()))

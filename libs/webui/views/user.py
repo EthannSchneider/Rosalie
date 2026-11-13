@@ -27,8 +27,8 @@ def role_json(role: Role, users: int = 0) -> dict:
 
 def roles_json(roles: list[Role], counts: dict[str, int]) -> dict:
     return {"roles": [role_json(role, counts.get(role.name, 0)) for role in roles],
-            "permissions": [{"name": name, "label": label, "description": description}
-                            for name, (label, description) in PERMISSIONS.items()]}
+            "permissions": [{"name": name, "label": label, "description": description, "group": group}
+                            for name, (label, description, group) in PERMISSIONS.items()]}
 
 
 def session_json(*, name: str, setup: bool, user: User | None, chat: bool,

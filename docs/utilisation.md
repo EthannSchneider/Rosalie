@@ -3,7 +3,7 @@
 ## Quand répond-elle ?
 
 1. **Jamais** aux messages commençant par `//` (`IGNORE_PREFIXES`), ni à quelqu'un d'autre que
-   ses owners (comptes liés à Discord dont le rôle a la permission `act`) si `public_replies` est sur non.
+   ses owners (comptes liés à Discord dont le rôle a au moins une permission `act.*`) si `public_replies` est sur non.
 2. **Toujours** quand on lui parle directement : en tête-à-tête (DM Discord, terminal),
    @mention, réponse à un de ses messages, son nom dans le message (`ROSALIE_NAMES`).
    Dans ces cas elle ne peut pas choisir le silence.
