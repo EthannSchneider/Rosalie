@@ -5,7 +5,9 @@ Ajouter une interface :
   1. interfaces/<nom>/__init__.py avec une sous-classe d'Interface (voir libs/core/interface.py
      et interfaces/terminal/ comme exemple minimal) ;
   2. l'enregistrer ci-dessous ;
-  3. l'activer : INTERFACES="discord,<nom>" dans le .env.
+  3. c'est tout : `python bot.py` lance toutes les interfaces sauf le terminal
+     (`python bot.py chat`). Une interface qui ne peut pas démarrer (ex : Discord sans token)
+     le dit et s'arrête, sans empêcher les autres de tourner.
 """
 import importlib
 
@@ -14,7 +16,12 @@ from libs.core.interface import Interface
 AVAILABLE = {
     "discord": "interfaces.discord:DiscordInterface",
     "terminal": "interfaces.terminal:TerminalInterface",
+    "web": "interfaces.web:WebInterface",
 }
+
+
+# Lancées par `python bot.py` : toutes, sauf le terminal (qui a sa commande : python bot.py chat)
+DEFAULT = tuple(name for name in AVAILABLE if name != "terminal")
 
 
 def load(name: str, rosalie) -> Interface:

@@ -3,11 +3,11 @@
 ## Quand répond-elle ?
 
 1. **Jamais** aux messages commençant par `//` (`IGNORE_PREFIXES`), ni à quelqu'un d'autre que
-   ses owners si `PUBLIC_REPLIES=false`.
+   ses owners (comptes admin liés à Discord) si `public_replies` est sur non.
 2. **Toujours** quand on lui parle directement : en tête-à-tête (DM Discord, terminal),
    @mention, réponse à un de ses messages, son nom dans le message (`ROSALIE_NAMES`).
    Dans ces cas elle ne peut pas choisir le silence.
-3. **Conversation dédiée** (`/rosalie here` ou `ROSALIE_CHANNEL_IDS`) : à tous tes messages.
+3. **Conversation dédiée** (`/rosalie here` ou le réglage *Salons dédiés*) : à tous tes messages.
 4. **Conversation en cours** : pendant `CONVERSATION_TIMEOUT` s, elle te suit sans être
    nommée ; un petit appel au modèle (OUI/NON) tranche les cas ambigus. `/rosalie stop` pour couper.
 
@@ -23,7 +23,7 @@ leur dit rien de privé.
   n'est envoyé, un ✅ si elle a quand même agi. Jamais quand on lui pose une question.
 - **Elle peut parler en plusieurs temps** : « je regarde ça » tout de suite, puis le résultat.
 - **Longues tâches** : elle peut enchaîner jusqu'à `MAX_TOOL_STEPS` actions (50, `0` = sans
-  limite) et t'envoie un **point d'étape** toutes les `PROGRESS_EVERY` actions (6) : ce qu'elle
+  limite) et t'envoie un **point d'étape** toutes les `progress_every` actions (6) : ce qu'elle
   a fait, trouvé, et ce qu'elle fait ensuite.
 - **Elle peut revenir plus tard** : rappel, prendre des nouvelles, relancer, réponse plus
   réfléchie. Au moment venu, elle décide encore si c'est toujours utile.
@@ -50,11 +50,11 @@ leur dit rien de privé.
 | Commande | Effet |
 |---|---|
 | `/rosalie status` | modèle, Ollama, mémoire, heartbeat, relances |
-| `/rosalie model <nom>` | changer de modèle Ollama |
+| `/rosalie model <nom>` | changer de modèle Ollama (enregistré dans les réglages) |
 | `/rosalie here` | (dés)activer « répondre à tout » dans ce salon |
 | `/rosalie reset` | effacer l'historique de ce salon (les souvenirs restent) |
 | `/rosalie stop` | mettre fin à la conversation en cours |
-| `/rosalie persona` | recharger `personas/rosalie.md` |
+| `/rosalie persona [nom]` | changer de personnalité, ou recharger l'actuelle |
 | `/rosalie memories [recherche]` · `/rosalie forget <id>` | voir / effacer des souvenirs |
 | `/rosalie agenda` · `/rosalie cancel <id>` | voir / annuler des relances |
 | `/rosalie initiative true/false` | lui permettre ou non de t'écrire d'elle-même |
@@ -63,7 +63,7 @@ leur dit rien de privé.
 
 ## Terminal
 
-`python bot.py chat` (ou `terminal` dans `INTERFACES`) : tu es son créateur, tous ses outils
+`python bot.py chat` : tu es son créateur, tous ses outils
 sont disponibles, les confirmations se font au clavier (`o` / `n`), les fichiers qu'elle
 t'envoie (photos…) sont enregistrés dans `storages/terminal_files/`. `/quit` pour quitter.
 Les logs vont dans `log.txt` sans encombrer la discussion.

@@ -4,7 +4,6 @@ en messages Discord. Ses outils propres sont dans tools/, ses commandes (/rosali
 from __future__ import annotations
 
 import io
-import os
 from typing import Any
 
 import discord
@@ -42,12 +41,15 @@ class DiscordInterface(Interface):
 
     # --- cycle de vie -------------------------------------------------------------------
     async def start(self):
-        token = os.getenv("ROSALIE_TOKEN")
-        if not token:
-            raise RuntimeError("ROSALIE_TOKEN n'est pas défini dans le .env")
-        if not self.rosalie.config.owner_ids:
-            raise RuntimeError("OWNER_IDS est vide : Rosalie n'obéit qu'aux owners")
-        await self.client.start(token)
+        config = self.rosalie.config
+        if not config.discord_token:
+            Log.warning("Discord non lancé : pas de token (site web > Réglages > Discord, ou "
+                        "python bot.py settings set discord_token), puis redémarre Rosalie")
+            return
+        if not self.rosalie.discord_owners():
+            Log.warning("Discord : aucun compte admin lié à un identifiant Discord, elle n'y obéira "
+                        "à personne (site web > Mon compte, ou python bot.py users discord <nom> <id>)")
+        await self.client.start(config.discord_token)
 
     async def stop(self):
         if not self.client.is_closed():
@@ -65,7 +67,7 @@ class DiscordInterface(Interface):
     # --- Discord -> cœur ------------------------------------------------------------------
     def person_from(self, user: discord.abc.User) -> Person:
         return Person("discord", user.id, user.name, user.display_name,
-                      is_owner=user.id in self.rosalie.config.owner_ids, native=user)
+                      is_owner=user.id in self.rosalie.discord_owners(), native=user)
 
     def conversation_from(self, channel, other: discord.abc.User | None = None) -> Conversation:
         private = isinstance(channel, discord.DMChannel)
@@ -124,7 +126,7 @@ class DiscordInterface(Interface):
 
     async def confirm(self, conversation: Conversation, text: str, *, code: str | None = None,
                       language: str | None = None) -> tuple[bool, Sent | None]:
-        owners = self.rosalie.config.owner_ids
+        owners = self.rosalie.discord_owners()
         if code is None:
             return await ask_confirmation(conversation.native, owners, text), None
         confirmed, shown = await ask_code_confirmation(conversation.native, owners, language, code)

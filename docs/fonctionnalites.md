@@ -1,8 +1,8 @@
 # Ce qu'elle sait faire
 
 Les outils marqués **Discord** ne sont disponibles que si l'interface Discord tourne — mais
-depuis n'importe quelle interface. `DISABLED_TOOLS` en retire (chaque outil occupe ~100 tokens
-du contexte). Les actions destructrices demandent une **confirmation** de son créateur.
+depuis n'importe quelle interface. La page *Réglages → Outils* du site web (ou
+`python bot.py settings tools disable …`) en retire : chaque outil occupe ~100 tokens du contexte. Les actions destructrices demandent une **confirmation** de son créateur.
 
 ## Partout
 
@@ -56,10 +56,11 @@ trouvées par la recherche web. 8 Mo max, logos/icônes ignorés.
 Quand tu lui demandes quelque chose, elle peut écrire du code dans un bloc ` ```run-python `
 (ou ` ```run-bash `). Il t'est montré (boutons **Exécuter / Annuler** sur Discord, `o/n` dans le
 terminal) ; rien ne tourne sans ton accord. Elle lit la sortie et te répond, ou corrige et
-repropose (max `CODE_MAX_RUNS` fois). Ça passe par le texte, pas par les outils : ça marche
+repropose (max `code_max_runs` fois). Ça passe par le texte, pas par les outils : ça marche
 même si le modèle gère mal le function calling.
 
-- dossier de travail : `storages/workspace` ; délai max `CODE_TIMEOUT` s (processus tué après) ;
-- les tokens / clés du `.env` sont retirés de l'environnement du code ;
+- dossier de travail : `storages/workspace` ; délai max `code_timeout` s (processus tué après) ;
+- les variables `*TOKEN`, `*KEY`, `SECRET`, `PASSWORD` sont retirées de l'environnement du code
+  (le token Discord n'y est de toute façon plus : il est dans `storages/config.sqlite3`) ;
 - un bloc ` ```python ` normal est juste affiché, jamais exécuté ; owners uniquement ;
-- `CODE_EXEC=false` pour couper. ⚠️ Le code tourne avec tes droits (dans le conteneur en Docker).
+- réglage `code_exec` sur non pour couper. ⚠️ Le code tourne avec tes droits (dans le conteneur en Docker).

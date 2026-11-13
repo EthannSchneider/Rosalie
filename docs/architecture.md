@@ -148,9 +148,9 @@ Les fichiers d'avant la restructuration (ids Discord bruts) sont repris automati
 
 ```
 bot.py                         point d'entrée : python bot.py <commande>
-commands/                      rosalie (défaut) · chat · pull · test
+commands/                      rosalie (défaut) · chat · settings · users · web · pull · test
 interfaces/
-  __init__.py                  registre des interfaces (INTERFACES dans le .env)
+  __init__.py                  registre des interfaces (python bot.py : toutes sauf le terminal)
   discord/
     __init__.py                DiscordInterface : Discord ⇄ cœur
     cogs/                      events (messages, « écrit… ») · admin (/rosalie) · training (⭐) · reload
@@ -159,6 +159,7 @@ interfaces/
     confirm.py                 boutons Confirmer/Annuler, Exécuter/Annuler
     utils.py                   description d'un salon, texte lisible d'un message
   terminal/__init__.py         TerminalInterface : discuter dans la console
+  web/__init__.py              WebInterface : le lien entre le site et le cœur (un compte = une conversation)
 libs/
   core/                        le cœur : rosalie.py · heartbeat.py · interface.py · types.py · text.py
   assistant/                   agent.py · code_runner.py · tools/ (génériques)
@@ -166,8 +167,14 @@ libs/
   memory/                      long_term (SQLite + embeddings) · extractor (prise de notes)
   llm/                         ollama · persona
   web.py · browser.py          internet, navigateur virtuel
-  config.py · settings.py · log.py
-personas/rosalie.md            sa personnalité
+  db/                          Database : SQLite + ORM SQLAlchemy, migrations Alembic appliquées à l'ouverture
+  config/                      Config · schema (chaque réglage) · models (ORM) · store (config.sqlite3 + storages/personas/*.md)
+  models/                      modèles de données partagés (ORM) : user · accounts · chat · config
+  webui/                       backend MVC du site : views/ · controllers/ · api/v1.py · server.py
+  settings.py · log.py
+personas/rosalie.md            sa personnalité par défaut (intégrée, lecture seule)
+migrations/                    Alembic : config/ (config.sqlite3) · main/ (rosalie.sqlite3)
+webui/                         le site : React + React Router + Tailwind (Vite) → webui/dist
 finetune/                      fine-tuning, séparé du bot
 tests/                         python bot.py test
 docs/                          cette documentation

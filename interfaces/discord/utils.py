@@ -30,5 +30,5 @@ def conversation_key(channel_or_ctx) -> str:
 
 
 async def is_owner(bot: discord.Bot, user: discord.abc.User) -> bool:
-    """Seuls les OWNER_IDS du .env peuvent commander Rosalie sur Discord."""
-    return user.id in bot.rosalie.config.owner_ids
+    """Seuls les comptes admin/superadmin liés à cet identifiant Discord la commandent."""
+    return user.id in bot.rosalie.discord_owners()

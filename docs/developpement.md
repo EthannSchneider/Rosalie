@@ -10,7 +10,9 @@ aucune messagerie ; les interfaces (`interfaces/`) traduisent ; les outils sont 
    [`Interface`](../libs/core/interface.py). L'interface terminal
    ([`interfaces/terminal/`](../interfaces/terminal/__init__.py)) est l'exemple minimal.
 2. Enregistre-la dans [`interfaces/__init__.py`](../interfaces/__init__.py) (`AVAILABLE`).
-3. Active-la : `INTERFACES="discord,<nom>"` dans le `.env`.
+3. C'est tout : `python bot.py` lance toutes les interfaces enregistrées sauf le terminal. Si
+   la tienne ne peut pas démarrer (pas de token…), qu'elle le dise (`Log.warning`) et que
+   `start()` se termine : les autres continuent.
 
 Squelette (ex : Telegram) :
 
@@ -45,7 +47,7 @@ class TelegramInterface(Interface):
 
 À savoir :
 
-- `Person.is_owner` est décidé par l'interface (Discord : `OWNER_IDS` ; terminal : toujours).
+- `Person.is_owner` est décidé par l'interface (Discord : comptes admin/superadmin du site liés à cet identifiant, `rosalie.discord_owners()` ; web : rôle du compte ; terminal : toujours).
   C'est la seule barrière entre « discuter » et « agir » : sois strict.
 - `Conversation.private=True` pour un tête-à-tête : elle répond toujours.
 - Facultatif : `typing()` (« écrit… »), `react()`, `prompt_context()` (lignes ajoutées au
@@ -78,6 +80,44 @@ Dans un outil, `ctx` donne : `ctx.rosalie` (services : `memory`, `long_term`, `a
 `ctx.interface()`. Options de `@tool` : `confirm="Texte {param}"` (confirmation de l'owner
 avant d'agir), `requires="<interface>"`. Les non-owners n'ont accès qu'à `GUEST_TOOLS`.
 
+## Ajouter un réglage
+
+Un `Field` dans [`libs/config/schema.py`](../libs/config/schema.py) + l'attribut dans `Config` :
+page Réglages du site, `python bot.py settings` et validation suivent. Lis `rosalie.config.<clé>` au moment
+de t'en servir (les réglages changent à chaud). Détails : [Réglages](reglages.md).
+
+## Bases de données et migrations
+
+Les bases `storages/config.sqlite3` et `storages/rosalie.sqlite3` passent par l'ORM SQLAlchemy
+(`libs/db/`), et leur schéma par des migrations **Alembic** appliquées toutes seules à
+l'ouverture (`Database(path, "main")`). Pour changer un modèle :
+
+1. modifie la classe dans `libs/models/` (partagé par tout Rosalie, pas seulement le site) ;
+2. génère la migration, puis **relis-la** :
+   ```bash
+   alembic -c migrations/alembic.ini --name main revision --autogenerate -m "ajoute X"
+   alembic -c migrations/alembic.ini --name main check     # modèles == migrations ?
+   ```
+3. un test dans `tests/` (une base neuve, et une base de la version d'avant).
+
+⚠️ **SQLite** : pour modifier une colonne, Alembic recrée la table (« batch ») à partir de la
+base relue, et SQLAlchemy n'y relit ni `COLLATE NOCASE` ni `AUTOINCREMENT`. Pour ajouter une
+colonne, préfère `op.add_column` (+ `op.create_index`) qui ne recrée rien — voir
+`migrations/main/versions/0002_discord_id.py`.
+
+`long_term.sqlite3` (souvenirs) reste pour l'instant en SQL direct (`libs/memory/long_term.py`).
+
+## Le site web
+
+Backend MVC dans `libs/webui/` (une route = une ligne dans `api/v1.py` + une méthode de
+contrôleur + une vue), frontend React dans `webui/src/`. Détails : [Site web](site-web.md#architecture).
+
+```bash
+npm --prefix webui install
+npm --prefix webui run dev     # http://localhost:5173, l'API vient de python bot.py (proxy /api)
+npm --prefix webui run build   # -> webui/dist, servi par Python
+```
+
 ## Tests
 
 ```bash
@@ -86,4 +126,6 @@ python bot.py test
 
 `tests/helpers.py` fournit une interface factice (`FakeInterface`), une fausse interface
 Discord, une Rosalie allégée et des contextes d'outils prêts à l'emploi (`make_ctx`,
-`discord_ctx`). Les tests n'écrivent pas dans `log.txt`.
+`discord_ctx`). `tests/test_settings.py` couvre les réglages, la commande `settings` et l'API
+du site ; `tests/test_web.py` les comptes, les rôles et le chat (vrai serveur sur un port libre,
+Rosalie remplacée par un écho). Les tests n'écrivent pas dans `log.txt`.

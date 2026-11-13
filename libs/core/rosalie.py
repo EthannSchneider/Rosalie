@@ -21,7 +21,8 @@ from libs.assistant.code_runner import (REFUSED_NOTE, environment_line, extract_
                                         result_note, run_code)
 from libs.assistant.tools import ToolContext
 from libs.browser import VirtualBrowser
-from libs.config import Config
+from libs.config import Config, ConfigStore, legacy_owner_ids
+from libs.config.schema import BY_KEY, FIELDS
 from libs.conversation.agenda import Agenda
 from libs.conversation.decider import ReplyDecider
 from libs.conversation.initiative import SILENCE, is_silence, with_note
@@ -38,11 +39,13 @@ from libs.log import Log
 from libs.memory.extractor import extract_memories
 from libs.memory.long_term import LongTermMemory
 from libs.settings import Settings
+from libs.models import Accounts, main_database
 
 ROSALIE_ID = "rosalie"   # auteur de ses propres messages dans l'historique
 MUST_REPLY_NOTE = ("(Note système : on te parle directement, tu dois répondre. Pas de [SILENCE]. "
                    "Si tu ne peux pas faire ce qu'on te demande, explique pourquoi.)")
 TYPING_EXTEND = 8.0      # un « écrit… » dure ~10 s (Discord)
+CONFIG_CHECK_EVERY = 1.0  # secondes entre deux vérifications des réglages (autre processus)
 
 
 @dataclass
@@ -56,13 +59,19 @@ class _Pending:
 
 
 class Rosalie:
-    def __init__(self, config: Config):
-        self.config = config
+    def __init__(self, config: Config, store: ConfigStore):
+        self.store = store                 # réglages modifiables à chaud (CLI, interface web)
+        self.__config = config
+        self.__revision = store.revision
+        self.__checked = time.monotonic()
         self.settings = Settings(config.storage_dir / "settings.json")
-        self.persona = Persona(config.persona_file)
+        # Comptes : qui est qui (rôles, identifiant Discord lié), pour toutes les interfaces
+        self.accounts = Accounts(main_database(config.storage_dir))
+        self.__warned_legacy = False
+        self.persona = Persona(lambda: self.config.persona, store)
         self.llm = OllamaClient(
             base_url=config.ollama_url,
-            model=self.settings.model or config.ollama_model,
+            model=config.ollama_model,
             keep_alive=config.ollama_keep_alive,
             options={"num_ctx": config.num_ctx, "temperature": config.temperature},
         )
@@ -71,15 +80,62 @@ class Rosalie:
         self.long_term = LongTermMemory(config.storage_dir / "long_term.sqlite3", self.llm,
                                         config.embed_model)
         self.dataset = DatasetStore(config.storage_dir / "dataset" / "samples.jsonl")
-        self.decider = ReplyDecider(config, self.llm, self.settings)
-        self.browser = VirtualBrowser(web.USER_AGENT) \
-            if config.web_access and config.web_browser != "never" else None
+        self.decider = ReplyDecider(lambda: self.config, self.llm, self.settings)
+        self.browser = VirtualBrowser(web.USER_AGENT)   # ne démarre Chromium qu'au besoin
         self.heartbeat = Heartbeat(self)
         self.interfaces: dict[str, Interface] = {}
 
         self.__locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.__pending: dict[str, _Pending] = {}
         self.__background: set[asyncio.Task] = set()
+
+    # --- réglages -----------------------------------------------------------------------------
+    @property
+    def config(self) -> Config:
+        """Réglages actuels. Une modification (CLI, interface web, /rosalie …) est prise en compte
+        au plus tard une seconde après, sans redémarrer."""
+        now = time.monotonic()
+        if now - self.__checked >= CONFIG_CHECK_EVERY:
+            self.__checked = now
+            self.store.refresh()
+        if self.store.revision != self.__revision:
+            self.__revision = self.store.revision
+            self.__apply(Config.load(self.store, self.__config.storage_dir))
+        return self.__config
+
+    def discord_owners(self) -> frozenset[int]:
+        """Les identifiants Discord à qui elle obéit : comptes admin/superadmin liés.
+        Tant qu'aucun n'est lié, les anciens OWNER_IDS restent valables (transition)."""
+        linked = self.accounts.discord_owner_ids()
+        if linked:
+            return linked
+        legacy = legacy_owner_ids(self.store)
+        if legacy and not self.__warned_legacy:
+            self.__warned_legacy = True
+            Log.warning("Discord : les anciens OWNER_IDS sont encore utilisés. Lie ton identifiant "
+                        "Discord à ton compte (site web > Mon compte, ou python bot.py users discord "
+                        "<nom> <id>) : ils seront alors ignorés.")
+        return legacy
+
+    def update_settings(self, changes: dict[str, Any]) -> list[str]:
+        """Modifie des réglages (validés, enregistrés). Retourne les clés changées."""
+        changed = self.store.update(changes)
+        _ = self.config   # appliqué tout de suite
+        return changed
+
+    def __apply(self, new: Config):
+        old, self.__config = self.__config, new
+        self.llm.base_url = new.ollama_url.rstrip("/")
+        self.llm.model = new.ollama_model
+        self.llm.keep_alive = new.ollama_keep_alive
+        self.llm.options = {**self.llm.options, "num_ctx": new.num_ctx,
+                            "temperature": new.temperature}
+        changed = [field.key for field in FIELDS if getattr(old, field.key) != getattr(new, field.key)]
+        if changed:
+            Log.info(f"Réglages mis à jour : {', '.join(changed)}")
+        later = [key for key in changed if BY_KEY[key].restart]
+        if later:
+            Log.warning(f"Pris en compte au prochain démarrage : {', '.join(later)}")
 
     @property
     def name(self) -> str:
@@ -121,9 +177,10 @@ class Rosalie:
             if pending.task:
                 pending.task.cancel()
         await self.llm.close()
-        if self.browser:
-            await self.browser.close()
+        await self.browser.close()
         self.long_term.close()
+        self.accounts.close()
+        self.store.close()
 
     # --- recevoir ---------------------------------------------------------------------------
     async def receive(self, incoming: Incoming):

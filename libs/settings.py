@@ -3,14 +3,15 @@ from pathlib import Path
 
 
 class Settings:
-    """Réglages modifiables à chaud depuis Discord, persistés en JSON.
+    """État choisi depuis les interfaces (/rosalie here), persisté en JSON.
 
-    Les valeurs du .env restent la base ; celles-ci s'y ajoutent.
+    Les réglages proprement dits sont dans storages/config.sqlite3 (libs/config). Les anciennes
+    clés « model » et « initiative » de ce fichier y sont importées au premier lancement.
     """
 
     def __init__(self, path: Path):
         self.__path = path
-        self.__data = {"dedicated": [], "model": None}
+        self.__data = {"dedicated": []}
         if path.exists():
             self.__data.update(json.loads(path.read_text(encoding="utf-8")))
         # Ancien format : ids de salons Discord
@@ -34,22 +35,3 @@ class Settings:
         self.__data["dedicated"] = sorted(keys)
         self.__save()
         return enabled
-
-    @property
-    def initiative(self) -> bool | None:
-        """None = valeur du .env (INITIATIVE)."""
-        return self.__data.get("initiative")
-
-    @initiative.setter
-    def initiative(self, value: bool | None):
-        self.__data["initiative"] = value
-        self.__save()
-
-    @property
-    def model(self) -> str | None:
-        return self.__data.get("model")
-
-    @model.setter
-    def model(self, value: str | None):
-        self.__data["model"] = value
-        self.__save()

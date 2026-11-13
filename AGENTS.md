@@ -14,32 +14,49 @@ jour quand tu changes un comportement, un outil ou une variable d'environnement.
 
 - **Tout est en français** : code commenté, docstrings, messages, prompts, docs, réponses à
   l'utilisateur. Les noms de code (fonctions, variables, outils) sont en anglais.
-- Python 3.13, `py-cord` (import `discord`), `python-dotenv`, `playwright`. Pas d'autre
-  dépendance sans raison : HTTP via `urllib` dans `asyncio.to_thread` (voir `libs/web.py`,
-  `libs/llm/ollama.py`).
+- Python 3.13, `py-cord` (import `discord`), `python-dotenv`, `playwright`, `SQLAlchemy` + `alembic`
+  (bases de données). Pas d'autre dépendance sans raison : HTTP via `urllib` dans
+  `asyncio.to_thread` (voir `libs/web.py`, `libs/llm/ollama.py`), serveur web en `http.server`.
+- Site (`webui/`) : React, React Router, Tailwind, Vite — versions exactes dans `package.json`.
+- **Bases de données** : ORM SQLAlchemy (`libs/db/`), schéma = migrations Alembic
+  (`migrations/config`, `migrations/main`), appliquées à l'ouverture. Tout changement de modèle =
+  une migration relue + `alembic … check` + un test. Jamais de `CREATE TABLE` à la main.
 - Commits : messages en anglais style `feat: …` / `refactor: …`, sur `main`, poussés sur
   `origin` (github.com:EthannSchneider/Rosalie). Ne commite que si on te le demande.
-- `.env` et `storages/` (mémoire, souvenirs, agenda, logs) sont privés et ignorés par git. Ne les
+- `.env` et `storages/` (mémoire, souvenirs, agenda, logs, **réglages** `config.sqlite3` avec le
+  token Discord) sont privés et ignorés par git. Ne les
   affiche pas et n'envoie jamais leur contenu (ni l'e-mail de l'utilisateur) à un service externe.
-  Toute nouvelle variable : `libs/config.py` + `.env.example` + docs.
+  Tout nouveau réglage : un `Field` dans `libs/config/schema.py` + l'attribut dans `Config`
+  (`libs/config/__init__.py`) + docs (`docs/reglages.md`). Le `.env` ne garde que le démarrage
+  (`STORAGE_DIR`, `LOG_FILE`, `WEB_UI_HOST`, `WEB_UI_PORT`). `python bot.py` lance toutes les
+  interfaces sauf le terminal (`interfaces.DEFAULT`) ; `python bot.py chat` le terminal seul.
 
 ## Commandes
 
 ```bash
-python bot.py              # lance les interfaces de INTERFACES (défaut : discord)
+python bot.py              # lance Rosalie : Discord + site web (toutes les interfaces sauf le terminal)
 python bot.py chat         # terminal seulement — le moyen le plus simple de tester en vrai
 python bot.py test         # tests unitaires (unittest, aucun réseau, n'écrivent pas log.txt)
 python bot.py pull         # télécharge le modèle Ollama configuré
+python bot.py settings     # voir / modifier les réglages (storages/config.sqlite3)
+python bot.py web          # seulement le site, sans chat (http://127.0.0.1:8765)
+python bot.py users        # comptes du site (add, passwd, role, delete)
+npm --prefix webui run build   # construire le site (React, Vite) -> webui/dist
+alembic -c migrations/alembic.ini --name main revision --autogenerate -m "…"   # nouvelle migration
 python -m compileall -q libs interfaces commands
 ```
 
 Pour un essai réel sans toucher aux données de l'utilisateur : `STORAGE_DIR` et `LOG_FILE` vers
-un dossier temporaire, `HEARTBEAT=false`, puis `python bot.py chat`.
+un dossier temporaire, `WEB_UI_PORT` libre (pour arrêter une instance de test, vise son PID via
+son port, jamais `pkill -f bot.py` : ça tuerait aussi la vraie), puis `python bot.py chat`. ⚠️ `load_dotenv()` lit
+quand même le vrai `.env` : au premier lancement, ses anciens réglages (token compris) seraient
+importés dans la base temporaire. Crée d'abord la base avec `store.set_meta("env_imported", "1")`
+(voir `libs/config`), puis coupe le heartbeat : `python bot.py settings set heartbeat non`.
 
 ## Architecture (résumé)
 
 ```
-bot.py → commands/            rosalie.py (run), chat.py (terminal), test.py, pull.py
+bot.py → commands/            rosalie.py (run), chat.py (terminal), settings.py, web.py, test.py, pull.py
 libs/core/                    LE CŒUR, sans aucun import Discord
   rosalie.py                  class Rosalie : receive → (décision, attente) → __think → speak
   interface.py                ABC Interface : start/stop/send/confirm/typing/react/conversation/person…
@@ -52,7 +69,17 @@ libs/assistant/
                               memory, internet, images, utilities (weather)
 libs/conversation/            memory (court terme), agenda, decider, prompt, initiative (silence)
 libs/memory/                  long_term (SQLite + embeddings), extractor (faits durables)
-libs/llm/                     ollama.py (client), persona.py ; personas/rosalie.md = la persona
+libs/config/                  Config, schema.py (chaque réglage), store.py (réglages SQLite +
+                              personnalités : personas/*.md intégrées, storages/personas/*.md perso)
+libs/db/                      Database (SQLite + SQLAlchemy), lance les migrations Alembic
+libs/models/                  MODÈLES PARTAGÉS (ORM) : user, accounts, chat, config — utilisés par le
+                              cœur, Discord, le site, les commandes ; ne dépendent pas de libs/webui
+libs/webui/                   backend MVC du site : views/ (JSON) · controllers/ ·
+                              api/v1.py (routes /api/v1 + droits) · router/http/security/events/server
+interfaces/web/               WebInterface (chat : un compte = une conversation « web:<id> »)
+migrations/                   Alembic : config/ (config.sqlite3), main/ (rosalie.sqlite3)
+libs/llm/                     ollama.py (client), persona.py ; personas/*.md = intégrées (lecture seule)
+webui/src/                    React : api/ · context/ · hooks/ · components/ · pages/ (Tailwind)
 interfaces/__init__.py        AVAILABLE = {"discord", "terminal"} ; load(name, rosalie)
 interfaces/discord/           DiscordInterface, cogs/ (events, admin, training, reload),
                               tools/ (messages, server, moderation, helpers), resolver, confirm
@@ -65,7 +92,8 @@ Points clés :
 
 - **Clés `interface:id`** partout (`discord:123`, `terminal:local`) : mémoire, agenda, réglages.
   Les anciennes données sans préfixe sont migrées automatiquement (ne casse pas ces migrations).
-- **`Person.is_owner`** (décidé par l'interface, Discord : `OWNER_IDS`) est la seule barrière
+- **`Person.is_owner`** (décidé par l'interface ; Discord : comptes admin/superadmin
+  liés à l'identifiant, `rosalie.discord_owners()` ; web : rôle du compte) est la seule barrière
   entre « discuter » et « agir ». Les autres n'ont que `GUEST_TOOLS` (chat, recherche, météo),
   aucun souvenir, aucune action.
 - **Outils** : `@tool(name, description, params, required=, confirm="Texte {param}", requires="discord")`.
@@ -81,6 +109,27 @@ Points clés :
 - **Lecture Discord** : `read_messages` 50 max par appel, enchaînable avec `before=<id>` ;
   `search_messages` parcourt tout l'historique (45 s par appel, puis `before`).
 
+- **Réglages à chaud** : `Rosalie.config` est une propriété qui relit `ConfigStore` (cache
+  mémoire, `PRAGMA data_version` vérifié au plus une fois par seconde) et applique au client
+  Ollama. Ne garde jamais une copie de la config au démarrage : lis `rosalie.config.x` au moment
+  voulu (le décideur reçoit `lambda: self.config`). Les secrets ne sortent jamais vers le
+  navigateur ni les logs (`Config.__repr__`, `display()` masquent).
+- **Site web** : tout derrière des comptes (`superadmin` > `admin` > `user`). Réglages et comptes :
+  superadmin seulement ; *Mon compte* pour chacun. Admin et superadmin = owners (chat web, et
+  Discord via l'identifiant Discord lié au compte — il n'y a plus d'`owner_ids`) ; `user` = invité.
+  Anciens `OWNER_IDS` gardés en méta (`legacy_owner_ids`), valables tant qu'aucun admin n'est lié. Premier compte via le code d'installation de la
+  console (ou `python bot.py users add`). Cookie HttpOnly SameSite=Strict, Origin vérifiée, JSON
+  obligatoire pour écrire, Host local exigé en écoute locale, CSP stricte (pas d'`eval`).
+- **API** : tout sous `/api/v1` ; une route = une ligne dans `libs/webui/api/v1.py` (méthode,
+  chemin, accès public/user/settings/users) + une méthode de contrôleur + une vue. Les écritures
+  exigent `Content-Type: application/json` (le client React l'envoie toujours).
+- **Migrations SQLite** : le mode batch d'Alembic recrée la table et perd `COLLATE NOCASE` et
+  `AUTOINCREMENT` ; pour ajouter une colonne, `op.add_column` + index (cf. 0002_discord_id).
+- **Chat web** : le serveur HTTP tourne dans des fils ; tout appel au cœur repasse par la boucle
+  asyncio (`run_coroutine_threadsafe` / `call_soon_threadsafe`). Événements vers le navigateur
+  par `EventHub` (SSE). Rien de ce qui vient de Rosalie n'est inséré en HTML (Markdown.jsx rend
+  des éléments React, jamais `dangerouslySetInnerHTML`).
+
 ## Ce qu'on a appris (pièges)
 
 - **Le contexte est LA contrainte.** Prompt système + schémas des ~38 outils ≈ 5 000 tokens.
@@ -90,7 +139,7 @@ Points clés :
   prompt système ni la dernière question), `result_budget(ctx)` (~40 % du contexte) pour les
   outils qui lisent beaucoup, `done_reason == "length"` signalé. Côté serveur Ollama,
   `OLLAMA_CONTEXT_LENGTH` doit aussi être assez grand. Chaque outil coûte ~100 tokens :
-  `DISABLED_TOOLS` pour en retirer.
+  le réglage `disabled_tools` (Réglages → Outils sur le site) pour en retirer.
 - **Le modèle local (Qwen3 8B abliterated) est imparfait en function calling** : il écrit parfois
   l'appel en JSON dans le texte (`_inline_tool_calls`), annonce une action sans la faire
   (`NUDGE`), prétend avoir agi sans outil (`CLAIM_NUDGE` + avertissement), ou imite du texte
@@ -114,7 +163,7 @@ Points clés :
 ## Ajouter quelque chose
 
 - **Une interface** : sous-classe d'`Interface` dans `interfaces/<nom>/`, l'enregistrer dans
-  `interfaces/AVAILABLE`, l'activer via `INTERFACES`. Squelette dans `docs/developpement.md`.
+  `interfaces/AVAILABLE` (lancée par défaut ; si elle ne peut pas démarrer, warning + fin de `start()`). Squelette dans `docs/developpement.md`.
 - **Un outil** : fonction `@tool` dans le bon fichier de `libs/assistant/tools/` (ou
   `interfaces/discord/tools/` avec `@discord_tool`), un test dans `tests/`, une ligne dans
   `docs/fonctionnalites.md`.

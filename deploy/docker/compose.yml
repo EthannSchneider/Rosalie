@@ -5,6 +5,13 @@
 # Metal, Ollama en conteneur serait 5-10x plus lent). Le bot le joint via
 # host.docker.internal.
 #
+# Site web (comptes, réglages, chat) : http://127.0.0.1:8765. Au premier lancement, le code
+# pour créer le superadmin est dans les logs :
+#   docker compose -f deploy/docker/compose.yml logs rosalie | grep installation
+# En ligne de commande :
+#   docker compose -f deploy/docker/compose.yml exec rosalie python3 bot.py settings
+#   docker compose -f deploy/docker/compose.yml exec rosalie python3 bot.py users add <nom> --role superadmin
+#
 # Sur un serveur Linux sans Ollama installé : active le profil « ollama »
 #   OLLAMA_URL=http://ollama:11434 docker compose -f deploy/docker/compose.yml --profile ollama up -d --build
 name: rosalie
@@ -18,14 +25,18 @@ services:
     env_file:
       - ../../.env
     environment:
+      # Seulement au premier lancement (importé dans les réglages, ensuite modifiable)
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       STORAGE_DIR: /app/storages
+      WEB_UI_HOST: 0.0.0.0          # dans le conteneur ; publié seulement en local (ports)
       LOG_FILE: /app/storages/log.txt
+    ports:
+      - "127.0.0.1:8765:8765"     # site web, joignable seulement depuis cette machine
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - rosalie-data:/app/storages
-      # Modifier le personnage sans rebuild, puis /rosalie persona sur Discord
+      # Personnalités intégrées (lecture seule) ; les tiennes sont dans le volume (storages/personas/)
       - ../../personas:/app/personas:ro
     command: ["rosalie"]
     init: true

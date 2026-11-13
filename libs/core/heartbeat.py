@@ -28,22 +28,20 @@ STARTUP_DELAY = 10   # laisse aux interfaces le temps de se connecter
 class Heartbeat:
     def __init__(self, rosalie: Rosalie):
         self.rosalie = rosalie
-        self.__quiet = parse_hours(rosalie.config.quiet_hours)
 
     @property
     def initiative_enabled(self) -> bool:
-        value = self.rosalie.settings.initiative
-        return self.rosalie.config.initiative if value is None else value
+        return self.rosalie.config.initiative
 
     async def run(self):
-        config = self.rosalie.config
-        if not config.heartbeat:
-            return
+        """Tourne tant que Rosalie vit ; HEARTBEAT et son intervalle se règlent à chaud."""
         await asyncio.sleep(STARTUP_DELAY)
         if not self.rosalie.agenda.last_reflection:   # pas de réflexion juste après un démarrage
             self.rosalie.agenda.mark_reflection()
         while True:
-            await self.beat()
+            config = self.rosalie.config
+            if config.heartbeat:
+                await self.beat()
             await asyncio.sleep(max(10, config.heartbeat_interval))
 
     async def beat(self):
@@ -85,7 +83,7 @@ class Heartbeat:
         reason = reflection_skip_reason(
             now,
             enabled=self.initiative_enabled,
-            quiet=self.__quiet,
+            quiet=parse_hours(config.quiet_hours),
             last_activity=last.timestamp if last else 0,
             last_reflection=rosalie.agenda.last_reflection,
             last_was_spontaneous=bool(last and last.is_bot and last.spontaneous),

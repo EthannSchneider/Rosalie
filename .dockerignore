@@ -14,3 +14,5 @@ log.txt
 storages
 deploy
 finetune
+webui/node_modules
+webui/dist

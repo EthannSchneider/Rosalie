@@ -1,14 +1,15 @@
 import asyncio
 import sys
 
-from libs.config import Config
+from libs.config import load_config
 from libs.llm.ollama import OllamaClient
 from libs.log import Log
 
 
 def run():
     """python bot.py pull [model] — télécharge un modèle dans Ollama."""
-    config = Config.from_env()
+    config, store = load_config()
+    store.close()
     model = sys.argv[2] if len(sys.argv) > 2 else config.ollama_model
     asyncio.run(_pull(config.ollama_url, model))
 

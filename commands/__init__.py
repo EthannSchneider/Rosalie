@@ -7,10 +7,13 @@ from libs.log import Log
 
 
 COMMANDS = {
-    "rosalie": "rosalie",        # lance Rosalie avec les interfaces du .env (INTERFACES)
+    "rosalie": "rosalie",        # lance Rosalie : Discord + site web (tout sauf le terminal)
     "chat": "chat",              # parle avec elle dans le terminal (sans Discord)
     "pull": "pull",            # télécharge le modèle Ollama configuré
     "test": "test",            # lance les tests unitaires
+    "settings": "settings",    # voir / modifier les réglages (storages/config.sqlite3)
+    "web": "web",              # seulement le site web (réglages, comptes ; sans chat)
+    "users": "users",          # comptes du site web
 }
 
 

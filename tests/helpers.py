@@ -20,7 +20,7 @@ OWNER = 42
 def make_config(**overrides) -> Config:
     with mock.patch.dict("os.environ", {}, clear=True):
         config = Config.from_env()
-    values = {**config.__dict__, "owner_ids": frozenset({OWNER}), "use_llm_decider": False,
+    values = {**config.__dict__, "use_llm_decider": False,
               "web_access": True, **overrides}
     return Config(**values)
 
@@ -90,6 +90,9 @@ class FakeRosalie:
         self.browser = None
         self.interfaces: dict[str, Interface] = {}
 
+    def discord_owners(self) -> frozenset[int]:
+        return frozenset({OWNER})
+
     def add(self, interface: Interface) -> Interface:
         self.interfaces[interface.name] = interface
         return interface
@@ -101,7 +104,7 @@ def make_ctx(rosalie: FakeRosalie | None = None, *, interface: str = "test", nat
     rosalie = rosalie or FakeRosalie()
     if interface not in rosalie.interfaces:
         rosalie.add(FakeDiscord(rosalie) if interface == "discord" else FakeInterface(rosalie, interface))
-    is_owner = person_id in rosalie.config.owner_ids if owner is None else owner
+    is_owner = person_id in rosalie.discord_owners() if owner is None else owner
     conversation = Conversation(interface, getattr(native, "id", conversation_id), "ici", private, native)
     person = Person(interface, person_id, f"u{person_id}", f"User{person_id}", is_owner)
     return ToolContext(rosalie=rosalie, conversation=conversation, person=person)

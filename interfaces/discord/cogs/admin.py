@@ -1,6 +1,7 @@
 import discord
 
 from interfaces.discord.utils import conversation_key
+from libs.config import SettingError
 from libs.llm.ollama import OllamaError
 from libs.log import Log
 from interfaces.discord.utils import is_owner
@@ -12,6 +13,11 @@ async def _model_autocomplete(ctx: discord.AutocompleteContext) -> list[str]:
     except OllamaError:
         return []
     return [model for model in models if ctx.value.lower() in model.lower()][:25]
+
+
+async def _persona_autocomplete(ctx: discord.AutocompleteContext) -> list[str]:
+    names = [info.name for info in ctx.bot.rosalie.store.personas()]
+    return [name for name in names if ctx.value.lower() in name][:25]
 
 
 class Admin(discord.Cog):
@@ -50,8 +56,7 @@ class Admin(discord.Cog):
         embed.add_field(name="Historique ici", value=f"{len(bot.rosalie.memory.get(channel_id))} messages")
         embed.add_field(name="Souvenirs", value=str(bot.rosalie.long_term.count()))
         embed.add_field(name="Exemples d'entraînement", value=str(bot.rosalie.dataset.count()))
-        initiative = bot.rosalie.settings.initiative
-        initiative = bot.rosalie.config.initiative if initiative is None else initiative
+        initiative = bot.rosalie.config.initiative
         embed.add_field(name="Heartbeat", value="actif" if bot.rosalie.config.heartbeat else "coupé")
         embed.add_field(name="Initiative", value="oui" if initiative else "non")
         embed.add_field(name="Relances prévues", value=str(len(bot.rosalie.agenda.pending())))
@@ -60,8 +65,11 @@ class Admin(discord.Cog):
     @rosalie.command(name="model", description="Changer le modèle Ollama utilisé")
     async def model(self, ctx: discord.ApplicationContext,
                     name: discord.Option(str, "Nom du modèle Ollama", autocomplete=_model_autocomplete)):
-        self.__bot.rosalie.llm.model = name
-        self.__bot.rosalie.settings.model = name
+        try:
+            self.__bot.rosalie.update_settings({"ollama_model": name})
+        except SettingError as error:
+            await ctx.respond(f"Refusé : {error}", ephemeral=True)
+            return
         Log.command(f"{ctx.author.name} switched model to {name}")
         await ctx.respond(f"Modèle changé pour `{name}`.", ephemeral=True)
 
@@ -98,15 +106,26 @@ class Admin(discord.Cog):
     @rosalie.command(name="initiative", description="Lui permettre (ou non) de t'écrire d'elle-même")
     async def initiative(self, ctx: discord.ApplicationContext,
                          enabled: discord.Option(bool, "Activer l'initiative")):
-        self.__bot.rosalie.settings.initiative = enabled
+        self.__bot.rosalie.update_settings({"initiative": enabled})
         await ctx.respond("Je t'écrirai de moi-même quand j'en aurai envie." if enabled
                           else "D'accord, je ne t'écrirai plus de moi-même (les relances "
                                "programmées restent).", ephemeral=True)
 
-    @rosalie.command(name="persona",description="Recharger le fichier de personnalité")
-    async def persona(self, ctx: discord.ApplicationContext):
-        text = self.__bot.rosalie.persona.reload()
-        await ctx.respond(f"Personnalité rechargée ({len(text)} caractères).", ephemeral=True)
+    @rosalie.command(name="persona", description="Changer de personnalité (vide = recharger l'actuelle)")
+    async def persona(self, ctx: discord.ApplicationContext,
+                      name: discord.Option(str, "Nom de la personnalité", required=False,
+                                           default=None, autocomplete=_persona_autocomplete)):
+        rosalie = self.__bot.rosalie
+        if name:
+            try:
+                rosalie.update_settings({"persona": name})
+            except SettingError as error:
+                await ctx.respond(f"Refusé : {error}", ephemeral=True)
+                return
+            Log.command(f"{ctx.author.name} switched persona to {name}")
+        text = rosalie.persona.reload()
+        await ctx.respond(f"Personnalité « {rosalie.persona.name} » chargée ({len(text)} caractères).",
+                          ephemeral=True)
 
     @rosalie.command(name="memories", description="Voir ses souvenirs à long terme")
     async def memories(self, ctx: discord.ApplicationContext,

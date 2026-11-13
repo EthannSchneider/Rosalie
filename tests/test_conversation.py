@@ -21,7 +21,7 @@ OTHER = 99
 def make_config(**overrides) -> Config:
     with mock.patch.dict("os.environ", {}, clear=True):
         config = Config.from_env()
-    values = {**config.__dict__, "owner_ids": frozenset({ME}), "use_llm_decider": False, **overrides}
+    values = {**config.__dict__, "use_llm_decider": False, **overrides}
     return Config(**values)
 
 

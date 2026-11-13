@@ -17,3 +17,6 @@ finetune/output/
 finetune/tools/
 
 **/__pycache__/
+
+webui/node_modules/
+webui/dist/

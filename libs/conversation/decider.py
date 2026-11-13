@@ -1,6 +1,7 @@
 import re
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 from libs.config import Config
 from libs.core.types import Incoming
@@ -43,14 +44,27 @@ class ReplyDecider:
          un petit appel LLM « OUI/NON » tranche les cas ambigus
     """
 
-    def __init__(self, config: Config, llm: OllamaClient, settings):
-        self.__config = config
+    def __init__(self, config: Config | Callable[[], Config], llm: OllamaClient, settings):
+        # Une fonction qui donne les réglages actuels (ils peuvent changer à chaud)
+        self.__source = config if callable(config) else (lambda: config)
         self.__llm = llm
         self.__settings = settings
         self.__active: dict[tuple[str, str], float] = {}
         self.__guest_replies: dict[str, float] = {}
-        names = "|".join(re.escape(name) for name in config.names)
-        self.__name_regex = re.compile(rf"(?<!\w)({names})(?!\w)", re.IGNORECASE)
+        self.__regex_for: tuple[str, ...] = ()
+        self.__regex: re.Pattern | None = None
+
+    @property
+    def __config(self) -> Config:
+        return self.__source()
+
+    @property
+    def __name_regex(self) -> re.Pattern:
+        names = self.__config.names
+        if self.__regex is None or names != self.__regex_for:
+            pattern = "|".join(re.escape(name) for name in names)
+            self.__regex_for, self.__regex = names, re.compile(rf"(?<!\w)({pattern})(?!\w)", re.IGNORECASE)
+        return self.__regex
 
     # --- état des conversations (clés « interface:id ») ----------------------------------
     def mark_active(self, conversation: str, person: str):
