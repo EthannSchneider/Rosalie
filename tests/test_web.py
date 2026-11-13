@@ -55,7 +55,7 @@ class MigrationsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Accounts(Path(tmp) / "rosalie.sqlite3").close()
             db = sqlite3.connect(Path(tmp) / "rosalie.sqlite3")
-            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0002")
+            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0003")
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             self.assertIn("discord_id", columns)
             schema = db.execute("SELECT sql FROM sqlite_master WHERE name = 'users'").fetchone()[0]
@@ -81,7 +81,10 @@ class MigrationsTest(unittest.TestCase):
             db.commit()
             db.close()
             accounts = Accounts(path)
-            self.assertEqual(accounts.authenticate("ancien", "motdepasse").role, "superadmin")
+            old = accounts.authenticate("ancien", "motdepasse")
+            self.assertEqual(old.role, "superadmin")
+            self.assertTrue(old.has("roles"))                       # rôles créés par la migration 0003
+            self.assertEqual([r.name for r in accounts.roles.all()], ["superadmin", "admin", "user"])
             accounts.set_discord(accounts.find("ancien").id, "123456789012345678")
             self.assertEqual(accounts.discord_owner_ids(), frozenset({123456789012345678}))
             accounts.close()
@@ -107,6 +110,60 @@ class MainDatabaseTest(unittest.TestCase):
                 "print([m for m in sys.modules if m.startswith('libs.webui')])")
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
         self.assertEqual(out.stdout.strip(), "[]")
+
+
+class RolesTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.accounts = Accounts(Path(self.tmp.name) / "rosalie.sqlite3")
+        self.roles = self.accounts.roles
+
+    def tearDown(self):
+        self.accounts.close()
+        self.tmp.cleanup()
+
+    def test_default_roles(self):
+        boss = self.accounts.create("boss", "motdepasse", "superadmin")
+        lea = self.accounts.create("lea", "motdepasse", "user")
+        self.assertTrue(all(boss.has(p) for p in ("chat", "act", "personas", "settings", "users", "roles")))
+        self.assertEqual(lea.permissions, frozenset({"chat"}))
+        self.assertFalse(lea.is_owner)
+
+    def test_manage_roles(self):
+        roles = self.roles
+        editor = roles.create("Editeur", "Éditeur", ["personas", "chat", "personas"])
+        self.assertEqual(editor.permissions, ["chat", "personas"])   # ordre canonique, sans doublon
+        for bad in [lambda: roles.create("editeur", "x", []), lambda: roles.create("x y", "x", []),
+                    lambda: roles.create("autre", "x", ["voler"]), lambda: roles.update("superadmin", label="x"),
+                    lambda: roles.delete("superadmin"), lambda: self.accounts.create("a", "motdepasse", "inconnu")]:
+            with self.assertRaises(SettingError):
+                bad()
+        user = self.accounts.create("sam", "motdepasse", "editeur")
+        self.assertTrue(user.has("personas"))
+        with self.assertRaises(SettingError):
+            roles.delete("editeur")                                    # encore attribué
+        roles.update("editeur", permissions=["chat", "act"])
+        self.assertTrue(self.accounts.get(user.id).is_owner)          # pris en compte tout de suite
+        self.accounts.set_role(user.id, "user")
+        roles.delete("editeur")
+        self.assertIsNone(roles.get("editeur"))
+
+    def test_discord_owners_follow_permissions(self):
+        self.accounts.create("bot", "motdepasse", "user", "123456789012345678")
+        self.assertEqual(self.accounts.discord_owner_ids(), frozenset())
+        self.roles.update("user", permissions=["chat", "act"])
+        self.assertEqual(self.accounts.discord_owner_ids(), frozenset({123456789012345678}))
+
+    def test_roles_command(self):
+        import io
+        from commands.roles import main
+        out = io.StringIO()
+        self.assertEqual(main(["add", "lecteur", "Lecteur", "chat"], self.accounts, out), 0)
+        self.assertEqual(main(["set", "lecteur", "chat,personas"], self.accounts, out), 0)
+        self.assertEqual(self.roles.get("lecteur").permissions, ["chat", "personas"])
+        main([], self.accounts, out)
+        self.assertIn("lecteur", out.getvalue())
+        self.assertEqual(main(["delete", "lecteur"], self.accounts, out), 0)
 
 
 class AccountsTest(unittest.TestCase):
@@ -237,6 +294,47 @@ class SiteTest(SiteCase):
 
         self.assertEqual(self.boss.request("POST", "/api/v1/session/logout", {})[0], 200)
         self.assertEqual(self.boss.request("GET", "/api/v1/settings")[0], 401)
+
+    def test_permissions_by_route(self):
+        roles = self.panel.accounts.roles
+        roles.create("editeur", "Éditeur", ["personas"])
+        self.boss.request("POST", "/api/v1/users", {"username": "sam", "password": "motdepasse", "role": "editeur"})
+        sam = self.login("sam")
+        self.assertEqual(sam.request("GET", "/api/v1/settings")[0], 200)              # pour les personnalités
+        self.assertEqual(sam.request("PATCH", "/api/v1/settings", {"changes": {"num_ctx": 8192}})[0], 403)
+        self.assertEqual(sam.request("PUT", "/api/v1/personas/pirate", {"text": "Arr.", "create": True})[0], 200)
+        self.assertEqual(sam.request("POST", "/api/v1/personas/pirate/activate", {})[0], 200)
+        self.assertEqual(self.store.get("persona"), "pirate")
+        self.assertEqual(sam.request("GET", "/api/v1/users")[0], 403)
+        status, result = sam.request("GET", "/api/v1/chat/messages")
+        self.assertEqual(status, 403)                                                   # pas « chat »
+        self.assertIn("Chat", result["error"])
+        session = sam.request("GET", "/api/v1/session")[1]
+        self.assertEqual(session["user"]["permissions"], ["personas"])
+        self.assertEqual(session["user"]["role_label"], "Éditeur")
+
+    def test_no_privilege_escalation(self):
+        accounts = self.panel.accounts
+        accounts.roles.create("rh", "RH", ["chat", "users"])
+        self.boss.request("POST", "/api/v1/users", {"username": "rh", "password": "motdepasse", "role": "rh"})
+        self.boss.request("POST", "/api/v1/users", {"username": "lea", "password": "motdepasse", "role": "user"})
+        rh = self.login("rh")
+        lea = accounts.find("lea")
+        boss = accounts.find("boss")
+        self.assertEqual(rh.request("PATCH", f"/api/v1/users/{lea.id}", {"role": "admin"})[0], 403)   # pas « act »
+        self.assertEqual(rh.request("PATCH", f"/api/v1/users/{lea.id}", {"role": "superadmin"})[0], 403)
+        self.assertEqual(rh.request("PATCH", f"/api/v1/users/{boss.id}", {"password": "nouveaumdp"})[0], 403)
+        self.assertEqual(rh.request("POST", "/api/v1/users", {"username": "x", "password": "motdepasse", "role": "admin"})[0], 403)
+        self.assertEqual(rh.request("PATCH", f"/api/v1/users/{lea.id}", {"role": "rh"})[0], 200)       # ce qu'il a lui-même
+        self.assertEqual(rh.request("POST", "/api/v1/roles", {"name": "x", "label": "X", "permissions": []})[0], 403)
+        self.assertEqual(rh.request("GET", "/api/v1/roles")[0], 200)                                  # pour choisir un rôle
+        # le superadmin gère les rôles
+        status, result = self.boss.request("POST", "/api/v1/roles", {"name": "editeur", "label": "Éditeur", "permissions": ["personas"]})
+        self.assertEqual(status, 201)
+        self.assertIn("editeur", [r["name"] for r in result["roles"]])
+        self.assertEqual(self.boss.request("PATCH", "/api/v1/roles/superadmin", {"permissions": []})[0], 400)
+        self.assertEqual(self.boss.request("DELETE", "/api/v1/roles/rh")[0], 400)                      # encore attribué
+        self.assertEqual(self.boss.request("DELETE", f"/api/v1/users/{boss.id}")[0], 400)              # soi-même
 
     def test_discord_link(self):
         accounts = self.panel.accounts

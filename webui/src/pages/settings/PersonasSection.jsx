@@ -1,7 +1,7 @@
 // Personnalités : les intégrées (personas/*.md) sont en lecture seule ; les autres se créent,
 // se dupliquent, se modifient, se renomment, se suppriment et s'activent.
 import { useEffect, useState } from "react";
-import { deletePersona, getPersona, renamePersona, savePersona, saveSettings } from "../../api/settings.js";
+import { activatePersona, deletePersona, getPersona, renamePersona, savePersona } from "../../api/settings.js";
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
 import Card from "../../components/ui/Card.jsx";
@@ -62,7 +62,7 @@ export default function PersonasSection({ settings }) {
     if (ok) setCurrent({ ...current, text, isNew: false });
   };
 
-  const use = () => run(() => saveSettings({ persona: current.name }), `Rosalie utilise maintenant « ${current.name} ».`);
+  const use = () => run(() => activatePersona(current.name), `Rosalie utilise maintenant « ${current.name} ».`);
 
   const rename = async () => {
     const name = await ask({ title: `Renommer « ${current.name} »`, label: "Nouveau nom", value: current.name });

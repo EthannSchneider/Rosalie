@@ -3,19 +3,20 @@
     router.add("PATCH", "/users/{id}", users.update, access="users")
 
 Niveaux d'accès :
-  public    sans compte (session, connexion, installation)
-  user      tout compte connecté
-  settings  peut modifier les réglages de Rosalie (superadmin)
-  users     peut gérer les comptes (superadmin)
+  public          sans compte (session, connexion, installation)
+  user            tout compte connecté
+  <permission>    le rôle du compte doit avoir cette permission (libs/models/role.py) ;
+  (a, b)          … ou au moins une de celles-ci
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable
 
+from libs.models.role import PERMISSIONS
 from libs.webui.http import HttpError, Request
 
-ACCESS = ("public", "user", "settings", "users")
+ACCESS = ("public", "user", *PERMISSIONS)
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class Route:
     method: str
     parts: tuple[str, ...]
     handler: Callable[[Request], object]
-    access: str
+    access: str | tuple[str, ...]
 
     def match(self, parts: list[str]) -> dict[str, str] | None:
         if len(parts) != len(self.parts):
@@ -42,9 +43,11 @@ class Router:
         self.prefix = prefix.rstrip("/")
         self.routes: list[Route] = []
 
-    def add(self, method: str, path: str, handler: Callable[[Request], object], access: str = "user"):
-        if access not in ACCESS:
-            raise ValueError(f"accès inconnu : {access}")
+    def add(self, method: str, path: str, handler: Callable[[Request], object],
+            access: str | tuple[str, ...] = "user"):
+        for level in (access if isinstance(access, tuple) else (access,)):
+            if level not in ACCESS:
+                raise ValueError(f"accès inconnu : {level}")
         self.routes.append(Route(method, _split(path), handler, access))
 
     def owns(self, path: str) -> bool:
@@ -70,10 +73,12 @@ def authorize(route: Route, request: Request):
         return
     if user is None:
         raise HttpError(401, "connexion requise")
-    if route.access == "settings" and not user.can_edit_settings:
-        raise HttpError(403, "réservé au superadmin")
-    if route.access == "users" and not user.can_manage_users:
-        raise HttpError(403, "réservé au superadmin")
+    if route.access == "user":
+        return
+    needed = route.access if isinstance(route.access, tuple) else (route.access,)
+    if not any(user.has(permission) for permission in needed):
+        names = " ou ".join(PERMISSIONS[p][0] for p in needed)
+        raise HttpError(403, f"permission requise : {names}")
 
 
 def _split(path: str) -> tuple[str, ...]:

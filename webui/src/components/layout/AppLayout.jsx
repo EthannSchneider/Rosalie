@@ -1,15 +1,18 @@
-// En-tête du site (onglets, menu du compte avec la section Superadmin) + la page courante.
+// En-tête du site (onglet Chat, menu du compte avec la section Administration) + la page courante.
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "../../context/SessionContext.jsx";
+import { can } from "../../lib/permissions.js";
 
-const TABS = [{ to: "/chat", label: "Chat" }];
+const TABS = [{ to: "/chat", label: "Chat", permission: "chat" }];
 
-// Menu du compte (avatar en haut à droite) : Mon compte, puis les pages réservées (Superadmin)
+// Menu du compte (avatar en haut à droite) : Mon compte, puis les pages d'administration
+// selon les permissions du rôle
 const ACCOUNT = { to: "/account", label: "Mon compte" };
-const SUPERADMIN = [
-  { to: "/settings", label: "Réglages", permission: "settings" },
+const ADMINISTRATION = [
+  { to: "/settings", label: "Réglages", permission: ["settings", "personas"] },
   { to: "/users", label: "Utilisateurs", permission: "users" },
+  { to: "/roles", label: "Rôles", permission: "roles" },
 ];
 
 export default function AppLayout() {
@@ -23,7 +26,7 @@ export default function AppLayout() {
           <span className="hidden sm:inline">{session.name}</span>
         </Link>
         <nav aria-label="Pages" className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]">
-          {TABS.map((tab) => (
+          {TABS.filter((tab) => can(user, tab.permission)).map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}
@@ -61,7 +64,7 @@ function AccountMenu({ user }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const admin = SUPERADMIN.filter((page) => user[page.permission]);
+  const admin = ADMINISTRATION.filter((page) => can(user, page.permission));
   // page du menu ouverte : le bouton du compte l'affiche et la met en évidence
   const current = [ACCOUNT, ...admin].find((page) => pathname.startsWith(page.to));
 
@@ -93,7 +96,7 @@ function AccountMenu({ user }) {
       </button>
       {open && (
         <div role="menu" className="absolute right-0 mt-2 w-56 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl dark:border-stone-700 dark:bg-stone-900">
-          <p className="px-3 py-1.5 text-xs text-stone-500">Rôle : {user.role}</p>
+          <p className="px-3 py-1.5 text-xs text-stone-500">Rôle : {user.role_label}</p>
           <button
             role="menuitem"
             aria-current={current === ACCOUNT ? "page" : undefined}
@@ -103,8 +106,8 @@ function AccountMenu({ user }) {
             {ACCOUNT.label}
           </button>
           {admin.length > 0 && (
-            <div role="group" aria-label="Superadmin" className="my-1 border-y border-stone-200 py-1 dark:border-stone-700">
-              <p className="px-3 pt-1.5 pb-1 text-xs font-semibold tracking-wide text-stone-400 uppercase">Superadmin</p>
+            <div role="group" aria-label="Administration" className="my-1 border-y border-stone-200 py-1 dark:border-stone-700">
+              <p className="px-3 pt-1.5 pb-1 text-xs font-semibold tracking-wide text-stone-400 uppercase">Administration</p>
               {admin.map((page) => (
                 <button
                   key={page.to}

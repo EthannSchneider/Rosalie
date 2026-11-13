@@ -40,7 +40,8 @@ python bot.py test         # tests unitaires (unittest, aucun réseau, n'écrive
 python bot.py pull         # télécharge le modèle Ollama configuré
 python bot.py settings     # voir / modifier les réglages (storages/config.sqlite3)
 python bot.py web          # seulement le site, sans chat (http://127.0.0.1:8765)
-python bot.py users        # comptes du site (add, passwd, role, delete)
+python bot.py users        # comptes (add, passwd, role, discord, delete)
+python bot.py roles        # rôles et permissions (add, set, label, delete)
 npm --prefix webui run build   # construire le site (React, Vite) -> webui/dist
 alembic -c migrations/alembic.ini --name main revision --autogenerate -m "…"   # nouvelle migration
 python -m compileall -q libs interfaces commands
@@ -92,7 +93,7 @@ Points clés :
 
 - **Clés `interface:id`** partout (`discord:123`, `terminal:local`) : mémoire, agenda, réglages.
   Les anciennes données sans préfixe sont migrées automatiquement (ne casse pas ces migrations).
-- **`Person.is_owner`** (décidé par l'interface ; Discord : comptes admin/superadmin
+- **`Person.is_owner`** (décidé par l'interface ; Discord : comptes dont le rôle a `act`,
   liés à l'identifiant, `rosalie.discord_owners()` ; web : rôle du compte) est la seule barrière
   entre « discuter » et « agir ». Les autres n'ont que `GUEST_TOOLS` (chat, recherche, météo),
   aucun souvenir, aucune action.
@@ -114,10 +115,14 @@ Points clés :
   Ollama. Ne garde jamais une copie de la config au démarrage : lis `rosalie.config.x` au moment
   voulu (le décideur reçoit `lambda: self.config`). Les secrets ne sortent jamais vers le
   navigateur ni les logs (`Config.__repr__`, `display()` masquent).
-- **Site web** : tout derrière des comptes (`superadmin` > `admin` > `user`). Réglages et comptes :
-  superadmin seulement ; *Mon compte* pour chacun. Admin et superadmin = owners (chat web, et
-  Discord via l'identifiant Discord lié au compte — il n'y a plus d'`owner_ids`) ; `user` = invité.
-  Anciens `OWNER_IDS` gardés en méta (`legacy_owner_ids`), valables tant qu'aucun admin n'est lié. Premier compte via le code d'installation de la
+- **Rôles et permissions** : un compte a un rôle (table `roles`), un rôle a des permissions
+  (`PERMISSIONS` dans `libs/models/role.py` : chat, act, personas, settings, users, roles). Le code
+  teste TOUJOURS `user.has("…")`, jamais un nom de rôle (sauf `superadmin`, verrouillé, qui a
+  tout). `act` = owner (chat web et Discord via l'identifiant lié ; il n'y a plus d'`owner_ids`).
+  Routes : `access="permission"` (ou tuple) dans `api/v1.py`. Anti-élévation :
+  `controllers/guards.py` (on ne donne que ce qu'on a ; seul un superadmin touche un superadmin).
+  Nouvelle permission = une entrée dans `PERMISSIONS` (+ docs) ; superadmin l'a d'office.
+  Anciens `OWNER_IDS` gardés en méta (`legacy_owner_ids`), valables tant qu'aucun compte `act` n'est lié. Premier compte via le code d'installation de la
   console (ou `python bot.py users add`). Cookie HttpOnly SameSite=Strict, Origin vérifiée, JSON
   obligatoire pour écrire, Host local exigé en écoute locale, CSP stricte (pas d'`eval`).
 - **API** : tout sous `/api/v1` ; une route = une ligne dans `libs/webui/api/v1.py` (méthode,

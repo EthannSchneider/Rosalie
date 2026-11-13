@@ -13,7 +13,8 @@ COMMANDS = {
     "test": "test",            # lance les tests unitaires
     "settings": "settings",    # voir / modifier les réglages (storages/config.sqlite3)
     "web": "web",              # seulement le site web (réglages, comptes ; sans chat)
-    "users": "users",          # comptes du site web
+    "users": "users",          # comptes
+    "roles": "roles",          # rôles et permissions
 }
 
 

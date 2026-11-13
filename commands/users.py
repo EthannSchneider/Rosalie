@@ -12,9 +12,8 @@ import time
 from libs.config import storage_dir
 from libs.config.schema import SettingError
 from libs.models import Accounts, main_database
-from libs.models.user import ROLES
 
-USAGE = f"""Comptes du site web de Rosalie
+USAGE = """Comptes de Rosalie (storages/rosalie.sqlite3)
 
   python bot.py users                           liste
   python bot.py users add <nom> [--role ROLE] [--discord ID]   créer (mot de passe demandé)
@@ -23,13 +22,9 @@ USAGE = f"""Comptes du site web de Rosalie
   python bot.py users role <nom> <ROLE>         changer le rôle
   python bot.py users delete <nom>
 
-Rôles : {", ".join(ROLES)}
-  superadmin  tout : réglages de Rosalie, personnalités, comptes
-  admin       la fait agir (outils, souvenirs, code), sur le chat web et sur Discord
-  user        discute seulement, comme un invité (discussion et recherche)
-
-Sur Discord, Rosalie obéit aux comptes admin et superadmin liés à leur identifiant Discord
-(clic droit sur ton profil > Copier l'identifiant, mode développeur requis)."""
+Rôles et permissions : python bot.py roles. Sur Discord, Rosalie obéit aux comptes liés à leur
+identifiant Discord dont le rôle a la permission « act » (clic droit sur ton profil > Copier
+l'identifiant, mode développeur requis)."""
 
 
 def run():
@@ -60,7 +55,7 @@ def main(args: list[str], accounts: Accounts, out=None, ask_password=None) -> in
             seen = time.strftime("%d.%m.%Y %H:%M", time.localtime(user.last_login)) \
                 if user.last_login else "jamais connecté"
             discord = f"discord {user.discord_id}" if user.discord_id else "pas de Discord"
-            say(f"  {user.username:<20} {user.role:<11} {discord:<28} {seen}")
+            say(f"  {user.username:<20} {user.role:<14} {discord:<28} {seen}")
     elif command == "add" and rest:
         options = {}
         for flag in ("--role", "--discord"):

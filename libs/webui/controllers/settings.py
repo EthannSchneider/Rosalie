@@ -1,4 +1,4 @@
-"""Réglages de Rosalie (superadmin) : schéma et valeurs, modèles Ollama, personnalités."""
+"""Réglages de Rosalie (permission « settings ») et personnalités (permission « personas »)."""
 from __future__ import annotations
 
 import json
@@ -48,6 +48,13 @@ class SettingsController(Controller):
         self.app.store.save_persona(name, request.text("text"),
                                     create=create if isinstance(create, bool) else None)
         Log.command(f"Site web ({request.user.username}) : personnalité « {name} » enregistrée")
+        return Json({"state": self.__state()})
+
+    def activate_persona(self, request: Request) -> Json:
+        """Choisir la personnalité active (permission « personas », sans tous les réglages)."""
+        name = request.params["name"]
+        self.app.store.set("persona", name)
+        Log.command(f"Site web ({request.user.username}) : personnalité active « {name} »")
         return Json({"state": self.__state()})
 
     def rename_persona(self, request: Request) -> Json:

@@ -2,8 +2,10 @@
 le cœur (owners Discord), les interfaces (Discord, web, terminal), les commandes, le site.
 
   config.py    Setting, Meta                      -> storages/config.sqlite3
-  user.py      User, LoginSession, rôles          -> storages/rosalie.sqlite3
-  accounts.py  Accounts : comptes et sessions
+  role.py      Role, PERMISSIONS                  -> storages/rosalie.sqlite3
+  user.py      User, LoginSession
+  roles.py     Roles : les rôles et leurs permissions
+  accounts.py  Accounts : comptes et sessions (accounts.roles : les rôles)
   chat.py      ChatMessage, ChatFile, ChatLog : historique du chat
 
 Le schéma des bases est tenu par les migrations Alembic (migrations/), appliquées à
@@ -17,7 +19,9 @@ from libs.models.accounts import Accounts
 from libs.models.bases import ConfigBase, MainBase
 from libs.models.chat import ChatFile, ChatLog, ChatMessage
 from libs.models.config import Meta, Setting
-from libs.models.user import OWNER_ROLES, ROLES, SETTINGS_ROLES, LoginSession, User
+from libs.models.role import PERMISSIONS, SUPERADMIN, Role
+from libs.models.roles import Roles
+from libs.models.user import LoginSession, User
 
 MAIN_DATABASE = "rosalie.sqlite3"
 _OLD_NAME = "web.sqlite3"   # nom avant que les comptes servent aussi à Discord
@@ -36,4 +40,4 @@ def main_database(storage: Path) -> Path:
 
 
 __all__ = ["Accounts", "ChatFile", "ChatLog", "ChatMessage", "ConfigBase", "LoginSession", "MAIN_DATABASE",
-           "MainBase", "Meta", "OWNER_ROLES", "ROLES", "SETTINGS_ROLES", "Setting", "User", "main_database"]
+           "MainBase", "Meta", "PERMISSIONS", "Role", "Roles", "SUPERADMIN", "Setting", "User", "main_database"]

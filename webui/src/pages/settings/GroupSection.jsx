@@ -17,8 +17,9 @@ export default function GroupSection({ settings, group, first }) {
       )}
       {group === "Discord" && (
         <p className={`${hintClass} mb-4`}>
-          À qui elle obéit sur Discord : aux comptes admin et superadmin liés à leur identifiant Discord (
-          <Link className="text-rose-600 underline dark:text-rose-400" to="/users">Utilisateurs</Link> ou{" "}
+          À qui elle obéit sur Discord : aux comptes liés à leur identifiant Discord dont le rôle a la permission
+          « Faire agir Rosalie » (<Link className="text-rose-600 underline dark:text-rose-400" to="/users">Utilisateurs</Link>,{" "}
+          <Link className="text-rose-600 underline dark:text-rose-400" to="/roles">Rôles</Link> ou{" "}
           <Link className="text-rose-600 underline dark:text-rose-400" to="/account">Mon compte</Link>).
         </p>
       )}

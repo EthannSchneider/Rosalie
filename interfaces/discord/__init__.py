@@ -47,7 +47,7 @@ class DiscordInterface(Interface):
                         "python bot.py settings set discord_token), puis redémarre Rosalie")
             return
         if not self.rosalie.discord_owners():
-            Log.warning("Discord : aucun compte admin lié à un identifiant Discord, elle n'y obéira "
+            Log.warning("Discord : aucun compte avec la permission « act » n'est lié à un identifiant Discord, elle n'y obéira "
                         "à personne (site web > Mon compte, ou python bot.py users discord <nom> <id>)")
         await self.client.start(config.discord_token)
 

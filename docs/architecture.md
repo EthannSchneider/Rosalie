@@ -148,7 +148,7 @@ Les fichiers d'avant la restructuration (ids Discord bruts) sont repris automati
 
 ```
 bot.py                         point d'entrée : python bot.py <commande>
-commands/                      rosalie (défaut) · chat · settings · users · web · pull · test
+commands/                      rosalie (défaut) · chat · settings · users · roles · web · pull · test
 interfaces/
   __init__.py                  registre des interfaces (python bot.py : toutes sauf le terminal)
   discord/
@@ -169,7 +169,7 @@ libs/
   web.py · browser.py          internet, navigateur virtuel
   db/                          Database : SQLite + ORM SQLAlchemy, migrations Alembic appliquées à l'ouverture
   config/                      Config · schema (chaque réglage) · models (ORM) · store (config.sqlite3 + storages/personas/*.md)
-  models/                      modèles de données partagés (ORM) : user · accounts · chat · config
+  models/                      modèles de données partagés (ORM) : role · roles · user · accounts · chat · config
   webui/                       backend MVC du site : views/ · controllers/ · api/v1.py · server.py
   settings.py · log.py
 personas/rosalie.md            sa personnalité par défaut (intégrée, lecture seule)

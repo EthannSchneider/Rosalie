@@ -9,12 +9,7 @@ import Card from "../../components/ui/Card.jsx";
 import { hintClass, inputClass } from "../../components/ui/styles.js";
 import { useSession } from "../../context/SessionContext.jsx";
 import { useToast } from "../../context/ToastContext.jsx";
-
-const ROLE_TEXT = {
-  superadmin: "Tu gères tout : réglages de Rosalie, personnalités, comptes. Elle agit pour toi.",
-  admin: "Rosalie agit pour toi (outils, souvenirs, code avec ta confirmation), ici et sur Discord.",
-  user: "Tu peux discuter avec Rosalie et lui faire chercher des infos ; elle n'agit pas pour toi.",
-};
+import { can } from "../../lib/permissions.js";
 
 export default function AccountPage() {
   const { session } = useSession();
@@ -26,9 +21,9 @@ export default function AccountPage() {
         <Avatar name={user.username} size="lg" />
         <div>
           <p className="flex items-center gap-2 font-semibold">
-            {user.username} <Badge tone="accent">{user.role}</Badge>
+            {user.username} <Badge tone="accent">{user.role_label}</Badge>
           </p>
-          <p className={hintClass}>{ROLE_TEXT[user.role]}</p>
+          <p className={hintClass}>{user.role_description}</p>
         </div>
       </Card>
       <LegacyOwners />
@@ -63,8 +58,8 @@ function LegacyOwners() {
     <Card className="border-amber-400 bg-amber-50 p-5 dark:border-amber-700 dark:bg-amber-950/40">
       <h2 className="mb-1 font-semibold">Ancien réglage OWNER_IDS encore utilisé</h2>
       <p className={hintClass}>
-        Sur Discord, Rosalie obéit encore aux identifiants de l'ancien .env, tant qu'aucun compte admin n'a lié le sien. Dès
-        qu'un compte admin est lié, ils sont ignorés.
+        Sur Discord, Rosalie obéit encore aux identifiants de l'ancien .env, tant qu'aucun compte qui peut la faire agir n'a
+        lié le sien. Dès que c'est fait, ils sont ignorés.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         {ids.map((id) => (
@@ -88,9 +83,9 @@ function DiscordCard() {
       <p className={hintClass}>
         Ton identifiant Discord : clic droit sur ton profil → Copier l'identifiant (active le mode développeur dans Paramètres →
         Avancés).{" "}
-        {user.owner
+        {can(user, "act")
           ? "Sur Discord, Rosalie t'obéira (commandes /rosalie, actions, boutons de confirmation)."
-          : "Sur Discord, elle te reconnaîtra mais ne fera que discuter (compte « user »)."}
+          : "Sur Discord, elle te reconnaîtra mais ne fera que discuter (ton rôle ne lui permet pas d'agir pour toi)."}
       </p>
       <form
         className="mt-3 flex flex-wrap gap-2"

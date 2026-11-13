@@ -3,7 +3,7 @@
 Utilisé par tout Rosalie : le site (connexion, rôles), Discord (à qui elle obéit), les commandes.
 
 Chaque compte peut être lié à son identifiant Discord : sur Discord, Rosalie obéit aux comptes
-admin et superadmin liés (c'est ce qui remplace l'ancien OWNER_IDS).
+liés dont le rôle a la permission « act » (c'est ce qui remplace l'ancien OWNER_IDS).
 
 Premier lancement : tant qu'aucun compte n'existe, le site demande de créer le superadmin avec
 un code d'installation affiché dans la console (sinon le premier venu pourrait le prendre).
@@ -20,8 +20,10 @@ from sqlalchemy import delete, func, select
 
 from libs.config.schema import SettingError
 from libs.db import Database
-from libs.models.user import (DISCORD_ID, MIN_PASSWORD, OWNER_ROLES, ROLES, USERNAME,
-                                    LoginSession, User, check_password, hash_password)
+from libs.models.role import SUPERADMIN
+from libs.models.roles import Roles
+from libs.models.user import (DISCORD_ID, MIN_PASSWORD, USERNAME, LoginSession, User, check_password,
+                              hash_password)
 
 SESSION_DAYS = 30
 _DUMMY_HASH = hash_password(secrets.token_hex(8))   # même durée qu'un vrai compte si inconnu
@@ -31,6 +33,7 @@ class Accounts:
     def __init__(self, path: Path):
         self.path = path
         self.db = Database(path, "main")
+        self.roles = Roles(self.db)
         self.setup_code: str | None = None
         if not self.count():
             code = secrets.token_hex(4).upper()
@@ -62,11 +65,10 @@ class Accounts:
             return session.scalar(select(User).where(User.username == username.strip()))
 
     def discord_owner_ids(self) -> frozenset[int]:
-        """Identifiants Discord à qui Rosalie obéit : comptes admin et superadmin liés."""
+        """Identifiants Discord à qui Rosalie obéit : comptes liés dont le rôle a « act »."""
         with self.db.read() as session:
-            ids = session.scalars(select(User.discord_id).where(
-                User.discord_id.is_not(None), User.role.in_(OWNER_ROLES)))
-            return frozenset(int(i) for i in ids)
+            linked = session.scalars(select(User).where(User.discord_id.is_not(None))).unique()
+            return frozenset(int(user.discord_id) for user in linked if user.has("act"))
 
     # --- écriture ---------------------------------------------------------------------------
     def create(self, username: str, password: str, role: str = "user",
@@ -74,7 +76,7 @@ class Accounts:
         username = username.strip()
         if not USERNAME.match(username):
             raise SettingError("nom d'utilisateur : 2 à 32 caractères (lettres, chiffres, . _ -)")
-        _check_role(role)
+        self.roles.require(role)
         _check_password(password)
         discord_id = _discord_id(discord_id)
         with self.db.transaction() as session:
@@ -85,7 +87,7 @@ class Accounts:
                         created=time.time(), discord_id=discord_id)
             session.add(user)
         self.setup_code = None
-        return user
+        return self.get(user.id)   # relu : avec son rôle et ses permissions
 
     def setup(self, code: str, username: str, password: str) -> User:
         """Crée le premier compte (superadmin) avec le code d'installation."""
@@ -93,13 +95,13 @@ class Accounts:
             raise SettingError("l'installation est déjà faite")
         if not hmac.compare_digest(code.strip().upper().encode(), self.setup_code.encode()):
             raise SettingError("code d'installation incorrect (il est affiché dans la console)")
-        return self.create(username, password, "superadmin")
+        return self.create(username, password, SUPERADMIN)
 
     def set_role(self, user_id: int, role: str):
-        _check_role(role)
+        role = self.roles.require(role).name
         with self.db.transaction() as session:
             user = _require(session, user_id)
-            if user.role == "superadmin" and role != "superadmin":
+            if user.role == SUPERADMIN and role != SUPERADMIN:
                 _keep_a_superadmin(session)
             user.role = role
 
@@ -124,7 +126,7 @@ class Accounts:
     def delete(self, user_id: int):
         with self.db.transaction() as session:
             user = _require(session, user_id)
-            if user.role == "superadmin":
+            if user.role == SUPERADMIN:
                 _keep_a_superadmin(session)
             session.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
             session.delete(user)
@@ -173,7 +175,7 @@ def _require(session, user_id: int) -> User:
 
 
 def _keep_a_superadmin(session):
-    count = session.scalar(select(func.count()).select_from(User).where(User.role == "superadmin"))
+    count = session.scalar(select(func.count()).select_from(User).where(User.role == SUPERADMIN))
     if count <= 1:
         raise SettingError("il doit rester au moins un superadmin")
 
@@ -188,11 +190,6 @@ def _check_discord_free(session, discord_id: str | None, user_id: int | None):
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
-
-
-def _check_role(role: str):
-    if role not in ROLES:
-        raise SettingError(f"rôle inconnu « {role} » ({', '.join(ROLES)})")
 
 
 def _discord_id(value) -> str | None:

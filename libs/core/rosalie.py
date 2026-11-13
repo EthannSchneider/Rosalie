@@ -104,7 +104,7 @@ class Rosalie:
         return self.__config
 
     def discord_owners(self) -> frozenset[int]:
-        """Les identifiants Discord à qui elle obéit : comptes admin/superadmin liés.
+        """Les identifiants Discord à qui elle obéit : comptes liés dont le rôle a « act ».
         Tant qu'aucun n'est lié, les anciens OWNER_IDS restent valables (transition)."""
         linked = self.accounts.discord_owner_ids()
         if linked:

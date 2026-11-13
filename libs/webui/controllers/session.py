@@ -47,7 +47,7 @@ class SessionController(Controller):
         app = self.app
         names = app.store.values()["names"]
         legacy = None
-        if user is not None and user.can_manage_users and not app.accounts.discord_owner_ids():
+        if user is not None and user.has("users") and not app.accounts.discord_owner_ids():
             # transition : anciens OWNER_IDS encore utilisés tant que personne n'est lié
             legacy = [str(i) for i in sorted(legacy_owner_ids(app.store))]
         return session_json(name=(names[0] if names else "rosalie").capitalize(),

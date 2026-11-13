@@ -8,6 +8,7 @@ import { useDialog } from "../../context/DialogContext.jsx";
 import { useSession } from "../../context/SessionContext.jsx";
 import { useToast } from "../../context/ToastContext.jsx";
 import useChat from "../../hooks/useChat.js";
+import { can } from "../../lib/permissions.js";
 
 export default function ChatPage() {
   const { session } = useSession();
@@ -67,9 +68,9 @@ function Chat({ session }) {
         <div>
           <h1 className="text-xl font-bold">{session.name}</h1>
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            {user.owner
+            {can(user, "act")
               ? "Elle peut agir pour toi (outils, souvenirs, code avec ta confirmation)."
-              : "Discussion et recherches seulement (compte « user »)."}
+              : "Discussion et recherches seulement (ton rôle ne lui permet pas d'agir pour toi)."}
           </p>
         </div>
         <Button variant="ghost" size="sm" onClick={reset}>Effacer la conversation</Button>
@@ -88,7 +89,7 @@ function Chat({ session }) {
                 {item.label}
               </div>
             ) : (
-              <Message key={item.message.id} message={item.message} canAnswer={user.owner} />
+              <Message key={item.message.id} message={item.message} canAnswer={can(user, "act")} />
             ),
           )
         )}

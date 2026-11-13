@@ -3,15 +3,17 @@
 L'interface **web** (`interfaces/web/`, active par défaut) lance avec Rosalie un site sur
 **http://127.0.0.1:8765** :
 
-| Page | Où | Qui | Quoi |
+| Page | Où | Permission | Quoi |
 |---|---|---|---|
-| **Chat** | onglet | tout compte | ta conversation privée avec Rosalie, en temps réel |
-| **Mon compte** | menu de l'avatar | tout compte | ton identifiant Discord, ton mot de passe |
-| **Réglages** | menu de l'avatar → *Superadmin* | superadmin | les réglages de Rosalie et ses personnalités ([détails](reglages.md)) |
-| **Utilisateurs** | menu de l'avatar → *Superadmin* | superadmin | créer des comptes, rôle, identifiant Discord, mot de passe, supprimer |
+| **Chat** | onglet | `chat` | ta conversation privée avec Rosalie, en temps réel |
+| **Mon compte** | menu de l'avatar | tout compte | ton rôle, ton identifiant Discord, ton mot de passe |
+| **Réglages** | menu → *Administration* | `settings` (tout) ou `personas` (Personas seulement) | les réglages de Rosalie et ses personnalités ([détails](reglages.md)) |
+| **Utilisateurs** | menu → *Administration* | `users` | créer des comptes, rôle, identifiant Discord, mot de passe, supprimer |
+| **Rôles** | menu → *Administration* | `roles` | créer des rôles, choisir leurs permissions |
 
-Le menu de l'avatar (en haut à droite) regroupe *Mon compte*, la section *Superadmin* (si tu
-l'es) et *Se déconnecter* ; son bouton affiche le nom de la page ouverte.
+Le menu de l'avatar (en haut à droite) regroupe *Mon compte*, la section *Administration*
+(les pages que ton rôle permet) et *Se déconnecter* ; son bouton affiche le nom de la page
+ouverte. Sans la permission `chat`, l'accueil est *Mon compte*.
 
 ## Premier lancement : le superadmin
 
@@ -26,32 +28,51 @@ Le code empêche le premier venu de prendre le compte. Il change à chaque lance
 plus une fois le compte créé. Sans navigateur :
 `python bot.py users add <nom> --role superadmin` (mot de passe demandé au clavier).
 
-## Rôles
+## Rôles et permissions
 
-| Rôle | Réglages, comptes | Chat web et Discord (si lié) |
-|---|---|---|
-| `superadmin` | ✓ | son créateur : outils, souvenirs, code (avec confirmation) |
-| `admin` | — | son créateur : outils, souvenirs, code (avec confirmation) |
-| `user` | — | invité : discussion et recherche seulement |
+Chaque compte a **un rôle**, et un rôle est **une liste de permissions**. Les permissions sont
+fixées par le code (c'est lui qui les vérifie) ; les rôles se gèrent sur la page **Rôles**
+(permission `roles`) ou avec `python bot.py roles`.
+
+| Permission | Ce qu'elle autorise |
+|---|---|
+| `chat` | utiliser le chat web |
+| `act` | faire agir Rosalie : outils, souvenirs, code (avec confirmation) — sur le site **et** sur Discord si l'identifiant Discord est lié. Sans elle : discussion et recherche seulement, comme un invité |
+| `personas` | créer, modifier et choisir les personnalités |
+| `settings` | tous les réglages de Rosalie |
+| `users` | gérer les utilisateurs |
+| `roles` | gérer les rôles |
+
+Rôles de départ : **`superadmin`** (verrouillé : toujours toutes les permissions, même celles
+ajoutées plus tard), **`admin`** (`chat`, `act`), **`user`** (`chat`). Les deux derniers se
+modifient ; crée les tiens (ex : un « Éditeur » avec seulement `personas`).
+
+Garde-fous contre l'élévation de droits :
+- on ne peut donner un rôle — ou ajouter/retirer une permission à un rôle — que si on a soi-même
+  toutes les permissions en jeu ;
+- seul un superadmin peut nommer, modifier ou retirer un superadmin ; il en reste toujours au moins un ;
+- un rôle encore attribué ne peut pas être supprimé ; on ne peut pas supprimer son propre compte.
+
+Attention : `users` + `roles` ensemble permettent de se créer un rôle avec ce qu'on a, et de
+l'attribuer — réserve ces deux permissions à des gens de confiance.
 
 ## Discord : à qui elle obéit
 
 Il n'y a plus de liste d'owners : **chaque compte peut être lié à son identifiant Discord**
-(*Mon compte*, la page *Utilisateurs* du superadmin, ou `python bot.py users discord <nom> <id>`).
-Sur Discord, Rosalie obéit aux comptes **admin et superadmin liés** : commandes `/rosalie`,
-actions, boutons de confirmation, ⭐. Un compte `user` lié reste un invité ; un identifiant ne
-peut être lié qu'à un seul compte.
+(*Mon compte*, la page *Utilisateurs*, ou `python bot.py users discord <nom> <id>`).
+Sur Discord, Rosalie obéit aux comptes liés dont le **rôle a la permission `act`** : commandes
+`/rosalie`, actions, boutons de confirmation, ⭐. Sans `act`, un compte lié reste un invité ; un
+identifiant ne peut être lié qu'à un seul compte.
 
 Identifiant Discord : clic droit sur ton profil → *Copier l'identifiant* (mode développeur :
 Paramètres → Avancés).
 
 **Transition depuis `OWNER_IDS`** : les anciens owners (du `.env` ou du réglage `owner_ids`)
-sont gardés de côté et restent valables **tant qu'aucun compte admin n'est lié** — Rosalie le
-signale au démarrage, et *Mon compte* propose au superadmin de lier l'ancien identifiant en un
-clic. Dès qu'un compte admin est lié, ils sont ignorés.
+sont gardés de côté et restent valables **tant qu'aucun compte avec `act` n'est lié** — Rosalie
+le signale au démarrage, et *Mon compte* propose de lier l'ancien identifiant en un clic. Dès
+qu'un compte avec `act` est lié, ils sont ignorés.
 
-Il reste toujours au moins un superadmin : le dernier ne peut être ni supprimé ni rétrogradé.
-Un compte `user` est soumis au réglage *Discuter avec les autres* (`public_replies`) et au
+Un compte sans `act` est soumis au réglage *Discuter avec les autres* (`public_replies`) et au
 délai anti-spam, comme les invités Discord.
 
 ## Le chat
@@ -81,6 +102,12 @@ python bot.py users discord lea 223456789012345678   # « - » pour délier
 python bot.py users passwd lea                # ferme aussi ses sessions
 python bot.py users role lea admin
 python bot.py users delete lea
+
+python bot.py roles                             # rôles, permissions, nombre de comptes
+python bot.py roles permissions                 # ce que permet chaque permission
+python bot.py roles add editeur "Éditeur" personas
+python bot.py roles set admin chat,act,personas
+python bot.py roles delete editeur              # seulement s'il n'est plus attribué
 ```
 
 ## Architecture
@@ -91,9 +118,9 @@ sert pour savoir à qui obéir sur Discord, les commandes `users` aussi) :
 
 | Dossier | Rôle |
 |---|---|
-| `libs/models/` | les données (ORM SQLAlchemy) : `User`, `LoginSession`, le dépôt `Accounts` ; `ChatMessage`, `ChatFile`, `ChatLog` ; `Setting`, `Meta` |
+| `libs/models/` | les données (ORM SQLAlchemy) : `Role` + `PERMISSIONS`, le dépôt `Roles` ; `User`, `LoginSession`, le dépôt `Accounts` ; `ChatMessage`, `ChatFile`, `ChatLog` ; `Setting`, `Meta` |
 | `views/` | la forme des réponses JSON (seul endroit qui décide de ce qui sort : jamais de hash, jamais de secret) |
-| `controllers/` | la logique par domaine : `session`, `account`, `settings`, `users`, `chat` |
+| `controllers/` | la logique par domaine : `session`, `account`, `settings`, `users`, `roles`, `chat` (+ `guards.py` : anti-élévation de droits) |
 | `api/v1.py` | la table des routes `/api/v1/…`, avec le droit requis pour chacune |
 | `router.py` · `http.py` · `security.py` · `events.py` · `server.py` | la plomberie : routage, requête/réponses, sécurité, temps réel, serveur HTTP |
 
@@ -105,12 +132,15 @@ L'API est **versionnée** : tout est sous `/api/v1`. Une version incompatible de
 | GET | `/session` | public |
 | POST | `/session/setup` · `/session/login` · `/session/logout` | public |
 | PUT | `/account/password` · `/account/discord` | compte |
-| GET · PATCH | `/settings` ; GET `/settings/models` | superadmin |
-| GET · PUT · DELETE | `/personas/{nom}` ; POST `/personas/{nom}/rename` | superadmin |
-| GET · POST | `/users` ; PATCH · DELETE `/users/{id}` | superadmin |
-| GET · POST · DELETE | `/chat/messages` (DELETE = effacer la conversation) | compte |
-| GET | `/chat/events` (Server-Sent Events) · `/chat/files/{id}` | compte |
-| POST | `/chat/typing` · `/chat/confirmations/{id}` | compte |
+| GET | `/settings` | `settings` ou `personas` |
+| PATCH | `/settings` ; GET `/settings/models` | `settings` |
+| GET · PUT · DELETE | `/personas/{nom}` ; POST `/personas/{nom}/activate` · `/rename` | `personas` |
+| GET | `/roles` (rôles + catalogue des permissions) | `roles` ou `users` |
+| POST · PATCH · DELETE | `/roles` · `/roles/{nom}` | `roles` |
+| GET · POST | `/users` ; PATCH · DELETE `/users/{id}` | `users` |
+| GET · POST · DELETE | `/chat/messages` (DELETE = effacer la conversation) | `chat` |
+| GET | `/chat/events` (Server-Sent Events) · `/chat/files/{id}` | `chat` |
+| POST | `/chat/typing` · `/chat/confirmations/{id}` | `chat` |
 
 **Bases de données** : `storages/rosalie.sqlite3` (comptes, sessions, chat ; anciennement
 `web.sqlite3`, renommée automatiquement) et
@@ -127,9 +157,9 @@ automatiquement à l'ouverture. Voir [Développement](developpement.md#bases-de-
 | `context/` | session connectée, notifications, boîtes de dialogue |
 | `hooks/` | `useChat` (historique + temps réel), `useSettings` (brouillon des réglages) |
 | `components/` | `layout/` (en-tête, gardes de rôle), `ui/` (boutons, badges…), `chat/`, `settings/` |
-| `pages/` | `auth/`, `chat/`, `account/`, `settings/` (une sous-route par groupe), `users/` |
+| `pages/` | `auth/`, `chat/`, `account/`, `settings/` (une sous-route par groupe), `users/`, `roles/` |
 
-Routes du navigateur : `/setup`, `/login`, `/chat`, `/account`, `/settings/<section>`, `/users`.
+Routes du navigateur : `/setup`, `/login`, `/chat`, `/account`, `/settings/<section>`, `/users`, `/roles`.
 Le serveur renvoie `index.html` pour toute adresse qui n'est ni un fichier ni l'API.
 
 ## Sécurité
@@ -141,9 +171,9 @@ Le serveur renvoie `index.html` pour toute adresse qui n'est ni un fichier ni l'
 - Les requêtes venant d'un autre site sont refusées (Origin, `Sec-Fetch-Site`, JSON obligatoire
   pour écrire), et la CSP interdit tout script extérieur ou `eval` ; en écoute locale, l'en-tête Host doit être local (contre le DNS rebinding).
 - Les secrets des réglages (token Discord, clé Brave) ne sont jamais envoyés au navigateur.
-- Lier un identifiant Discord à un compte admin donne à cette personne Discord les droits de
-  Rosalie : chaque compte ne peut lier que le sien (*Mon compte*) ; le superadmin peut corriger
-  n'importe lequel (*Utilisateurs*).
+- Lier un identifiant Discord à un compte avec `act` donne à cette personne Discord les droits de
+  Rosalie : chaque compte ne peut lier que le sien (*Mon compte*) ; qui a `users` peut corriger
+  les autres (*Utilisateurs*).
 - Par défaut le site n'écoute que sur `127.0.0.1`. Pour l'ouvrir au réseau :
   `WEB_UI_HOST=0.0.0.0` dans le `.env` ; hors de chez toi, mets-le derrière un reverse proxy
   **HTTPS** (le site lui-même parle HTTP).

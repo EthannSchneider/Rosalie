@@ -1,6 +1,7 @@
 // Gardes de routes : selon la session, on affiche la page ou on redirige.
 import { Navigate, useLocation } from "react-router-dom";
 import { useSession } from "../../context/SessionContext.jsx";
+import { can } from "../../lib/permissions.js";
 import Loading from "../ui/Loading.jsx";
 
 function Pending() {
@@ -24,15 +25,21 @@ export function RequireGuest({ children, setup = false }) {
   const { session } = useSession();
   const location = useLocation();
   if (!session) return <Pending />;
-  if (session.user) return <Navigate to={setup ? "/account" : location.state?.from ?? "/chat"} replace />;
+  if (session.user) return <Navigate to={setup ? "/account" : location.state?.from ?? "/"} replace />;
   if (session.setup && !setup) return <Navigate to="/setup" replace />;
   if (!session.setup && setup) return <Navigate to="/login" replace />;
   return children;
 }
 
-/** Pages réservées : permission « settings » ou « users » (superadmin). */
+/** Pages réservées : la permission (ou l'une des permissions) du rôle. */
 export function RequirePermission({ permission, children }) {
   const { session } = useSession();
-  if (!session?.user?.[permission]) return <Navigate to="/chat" replace />;
+  if (!can(session?.user, permission)) return <Home />;
   return children;
+}
+
+/** Page d'accueil : le chat si le rôle le permet, sinon Mon compte. */
+export function Home() {
+  const { session } = useSession();
+  return <Navigate to={can(session?.user, "chat") ? "/chat" : "/account"} replace />;
 }

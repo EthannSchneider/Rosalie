@@ -4,7 +4,7 @@ import discord
 
 
 class ConfirmView(discord.ui.View):
-    """Boutons Confirmer / Annuler, cliquables uniquement par les owners (comptes admin liés)."""
+    """Boutons Confirmer / Annuler, cliquables uniquement par les owners (comptes liés avec la permission « act »)."""
 
     def __init__(self, owner_ids: frozenset[int], timeout: float = 60,
                  labels: tuple[str, str] | None = None):

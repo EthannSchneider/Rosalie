@@ -3,11 +3,13 @@
 import { useEffect } from "react";
 import { Navigate, NavLink, Outlet, useBlocker, useOutletContext } from "react-router-dom";
 import SaveBar from "../../components/settings/SaveBar.jsx";
+import { useSession } from "../../context/SessionContext.jsx";
 import Loading from "../../components/ui/Loading.jsx";
 import useSettings from "../../hooks/useSettings.js";
 
 export default function SettingsPage() {
-  const settings = useSettings();
+  const { session } = useSession();
+  const settings = useSettings(session.user);
   const dirty = settings.draft.size > 0;
 
   // Quitter la page avec des modifications non enregistrées : on demande

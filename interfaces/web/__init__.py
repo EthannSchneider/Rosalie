@@ -1,8 +1,8 @@
 """Interface web : le site de Rosalie (panneau de réglages + chat), servi par libs/webui.
 
 Chaque compte (libs/models/) a sa conversation privée avec elle : clé « web:<id> ».
-Les admins et le superadmin sont ses créateurs (outils, souvenirs, code confirmé) ; le rôle
-« user » discute seulement, comme un invité sur Discord.
+Un compte dont le rôle a la permission « act » est son créateur (outils, souvenirs, code
+confirmé) ; sans elle, il discute seulement, comme un invité sur Discord.
 
 Le site lui-même (API MVC /api/v1, React) est dans libs/webui ; cette interface fait le lien
 avec le cœur. Le serveur HTTP tourne dans des fils ; tout ce qui touche au cœur repasse par la
@@ -105,7 +105,7 @@ class WebInterface(Interface):
         if pending is None or pending[1] != self.key_of(user):
             raise SettingError("cette demande n'attend plus de réponse")
         if not user.is_owner:
-            raise SettingError("seul un admin peut confirmer")
+            raise SettingError("il faut la permission « Faire agir Rosalie » pour confirmer")
         future = pending[0]
         self.__loop().call_soon_threadsafe(lambda: future.done() or future.set_result(accept))
 

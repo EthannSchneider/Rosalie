@@ -30,5 +30,5 @@ def conversation_key(channel_or_ctx) -> str:
 
 
 async def is_owner(bot: discord.Bot, user: discord.abc.User) -> bool:
-    """Seuls les comptes admin/superadmin liés à cet identifiant Discord la commandent."""
+    """Seuls les comptes liés à cet identifiant Discord dont le rôle a « act » la commandent."""
     return user.id in bot.rosalie.discord_owners()

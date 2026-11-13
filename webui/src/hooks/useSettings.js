@@ -9,7 +9,8 @@ export function slugify(text) {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
-export default function useSettings() {
+/** user : le compte connecté (les sections dépendent de ses permissions). */
+export default function useSettings(user) {
   const [state, setState] = useState(null);
   const [draft, setDraft] = useState(new Map());
   const [error, setError] = useState(null);
@@ -68,10 +69,12 @@ export default function useSettings() {
     }
   }, [draft]);
 
-  const sections = useMemo(
-    () => [...(state?.groups ?? []), "Personas"].map((label) => ({ label, slug: slugify(label) })),
-    [state],
-  );
+  const sections = useMemo(() => {
+    const labels = [];
+    if (user.permissions.includes("settings")) labels.push(...(state?.groups ?? []));
+    if (user.permissions.includes("personas")) labels.push("Personas");
+    return labels.map((label) => ({ label, slug: slugify(label) }));
+  }, [state, user]);
 
   return {
     state, setState, error, fields, sections, draft, valueOf, change, forget, saving, save, reload: load,

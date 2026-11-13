@@ -1,9 +1,7 @@
-"""Modèle : un compte du site, et ses sessions de connexion.
+"""Modèle : un compte, et ses sessions de connexion.
 
-Rôles :
-  superadmin  tout : réglages de Rosalie, personnalités, comptes (il en reste toujours au moins un)
-  admin       la fait agir (outils, souvenirs, code), sur le chat web et sur Discord
-  user        discute seulement, comme un invité (discussion et recherche, aucune action)
+Ce qu'un compte peut faire dépend des permissions de son rôle (libs/models/role.py) :
+`user.has("act")`, `user.has("settings")`… Jamais de test sur le nom du rôle.
 """
 from __future__ import annotations
 
@@ -14,13 +12,11 @@ import re
 import secrets
 
 from sqlalchemy import Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from libs.models.bases import MainBase
+from libs.models.role import PERMISSIONS, SUPERADMIN, Role
 
-ROLES = ("superadmin", "admin", "user")
-OWNER_ROLES = ("superadmin", "admin")       # font agir Rosalie (= « owner » sur Discord)
-SETTINGS_ROLES = ("superadmin",)            # réglages de Rosalie (globaux)
 MIN_PASSWORD = 8
 USERNAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,31}$")
 DISCORD_ID = re.compile(r"^\d{15,21}$")
@@ -34,25 +30,35 @@ class User(MainBase):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(collation="NOCASE"), unique=True, nullable=False)
     password: Mapped[str] = mapped_column(Text, nullable=False)          # hash scrypt, jamais affiché
-    role: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)              # roles.name
     created: Mapped[float] = mapped_column(Float, nullable=False)
     last_login: Mapped[float | None] = mapped_column(Float)
     discord_id: Mapped[str | None] = mapped_column(Text, index=True, unique=True)   # son compte Discord
+
+    # Chargé avec le compte (jointure) : utilisable après la fermeture de la session
+    role_info: Mapped[Role | None] = relationship(
+        Role, primaryjoin="foreign(User.role) == Role.name", lazy="joined", viewonly=True)
 
     def __repr__(self) -> str:
         return f"User(id={self.id}, username={self.username!r}, role={self.role!r})"
 
     @property
+    def permissions(self) -> frozenset[str]:
+        if self.role == SUPERADMIN:
+            return frozenset(PERMISSIONS)
+        return self.role_info.granted if self.role_info else frozenset()
+
+    def has(self, permission: str) -> bool:
+        return permission in self.permissions
+
+    @property
+    def is_superadmin(self) -> bool:
+        return self.role == SUPERADMIN
+
+    @property
     def is_owner(self) -> bool:
-        return self.role in OWNER_ROLES
-
-    @property
-    def can_edit_settings(self) -> bool:
-        return self.role in SETTINGS_ROLES
-
-    @property
-    def can_manage_users(self) -> bool:
-        return self.role == "superadmin"
+        """« Owner » de Rosalie : elle agit pour lui (chat web, Discord)."""
+        return self.has("act")
 
 
 class LoginSession(MainBase):

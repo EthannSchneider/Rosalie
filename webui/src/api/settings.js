@@ -7,3 +7,4 @@ export const getPersona = (name) => api.get(`/personas/${enc(name)}`);
 export const savePersona = (name, text, create) => api.put(`/personas/${enc(name)}`, { text, create });
 export const renamePersona = (name, to) => api.post(`/personas/${enc(name)}/rename`, { to });
 export const deletePersona = (name) => api.delete(`/personas/${enc(name)}`);
+export const activatePersona = (name) => api.post(`/personas/${enc(name)}/activate`);

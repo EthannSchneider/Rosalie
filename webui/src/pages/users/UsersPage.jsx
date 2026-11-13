@@ -1,5 +1,8 @@
-// Utilisateurs (superadmin) : créer, rôle, identifiant Discord, mot de passe, supprimer.
-import { useEffect, useState } from "react";
+// Utilisateurs (permission « users ») : créer, rôle, identifiant Discord, mot de passe, supprimer.
+// Les rôles qu'on ne peut pas attribuer (permissions qu'on n'a pas, superadmin) sont grisés.
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { listRoles } from "../../api/roles.js";
 import { createUser, deleteUser, listUsers, updateUser } from "../../api/users.js";
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
@@ -9,23 +12,21 @@ import { hintClass, inputClass } from "../../components/ui/styles.js";
 import { useDialog } from "../../context/DialogContext.jsx";
 import { useSession } from "../../context/SessionContext.jsx";
 import { useToast } from "../../context/ToastContext.jsx";
-
-const ROLES = {
-  superadmin: "tout : réglages de Rosalie, personnalités, comptes",
-  admin: "la fait agir (outils, souvenirs, code), sur le chat web et sur Discord",
-  user: "discute seulement, comme un invité (discussion et recherche)",
-};
+import { can, canAssign } from "../../lib/permissions.js";
 
 export default function UsersPage() {
   const toast = useToast();
+  const { session } = useSession();
   const [users, setUsers] = useState(null);
+  const [roles, setRoles] = useState([]);
 
   useEffect(() => {
     listUsers().then(setUsers).catch((error) => toast(error.message, "error"));
+    listRoles().then((data) => setRoles(data.roles)).catch((error) => toast(error.message, "error"));
   }, [toast]);
 
   /** Lance une action qui renvoie la liste à jour ; affiche le message si ça marche. */
-  const run = async (action, success) => {
+  const run = useCallback(async (action, success) => {
     try {
       setUsers(await action());
       if (success) toast(success);
@@ -34,37 +35,43 @@ export default function UsersPage() {
       toast(error.message, "error");
       return false;
     }
-  };
+  }, [toast]);
 
   if (!users) return <Loading />;
+  const me = session.user;
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
       <h1 className="mb-1 text-2xl font-bold">Utilisateurs</h1>
       <p className={`${hintClass} mb-5`}>
-        Chaque compte a sa propre conversation avec Rosalie. Sur Discord, elle obéit aux comptes admin et superadmin liés à
-        leur identifiant Discord. Rôles :{" "}
-        {Object.entries(ROLES).map(([role, text], i) => (
-          <span key={role}>
-            {i > 0 && " · "}
-            <strong>{role}</strong> — {text}
-          </span>
-        ))}
-        .
+        Chaque compte a sa propre conversation avec Rosalie et un rôle qui décide de ce qu'il peut faire
+        {can(me, "roles") ? <> (<Link to="/roles" className="text-rose-600 underline dark:text-rose-400">Rôles</Link>)</> : null}.
+        Sur Discord, elle obéit aux comptes liés à leur identifiant Discord dont le rôle a la permission « Faire agir Rosalie ».
       </p>
       <Card className="divide-y divide-stone-200 dark:divide-stone-800">
-        {users.map((user) => <UserRow key={user.id} user={user} run={run} />)}
+        {users.map((user) => <UserRow key={user.id} user={user} roles={roles} run={run} />)}
       </Card>
       <h2 className="mt-7 mb-2.5 font-semibold">Nouvel utilisateur</h2>
-      <NewUser run={run} />
+      <NewUser roles={roles} run={run} />
     </main>
   );
 }
 
-function UserRow({ user, run }) {
+function RoleOptions({ roles, current }) {
+  const { session } = useSession();
+  return roles.map((role) => (
+    <option key={role.name} value={role.name} disabled={role.name !== current && !canAssign(session.user, role)}>
+      {role.label}
+    </option>
+  ));
+}
+
+function UserRow({ user, roles, run }) {
   const { session } = useSession();
   const { ask, confirm } = useDialog();
   const [discord, setDiscord] = useState(user.discord_id ?? "");
-  const self = user.id === session.user.id;
+  const me = session.user;
+  const self = user.id === me.id;
+  const locked = user.superadmin && !me.superadmin; // seul un superadmin modifie un superadmin
   const seen = user.last_login
     ? `Dernière connexion : ${new Date(user.last_login * 1000).toLocaleString("fr-CH", { dateStyle: "medium", timeStyle: "short" })}`
     : "Jamais connecté";
@@ -93,7 +100,7 @@ function UserRow({ user, run }) {
   };
 
   return (
-    <div className="grid grid-cols-2 items-center gap-3 px-5 py-3.5 md:grid-cols-[minmax(0,1fr)_200px_130px_220px]">
+    <div className="grid grid-cols-2 items-center gap-3 px-5 py-3.5 md:grid-cols-[minmax(0,1fr)_200px_150px_220px]">
       <div className="col-span-2 min-w-0 md:col-span-1">
         <p className="flex items-center gap-2 font-semibold">
           {user.username} {self && <Badge tone="accent">toi</Badge>}
@@ -102,6 +109,7 @@ function UserRow({ user, run }) {
       </div>
       <input
         value={discord}
+        disabled={locked}
         onChange={(event) => setDiscord(event.target.value)}
         onBlur={saveDiscord}
         onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
@@ -114,21 +122,28 @@ function UserRow({ user, run }) {
       />
       <select
         value={user.role}
+        disabled={locked}
         aria-label={`Rôle de ${user.username}`}
-        onChange={(event) => run(() => updateUser(user.id, { role: event.target.value }), `${user.username} est maintenant ${event.target.value}.`)}
+        onChange={(event) => {
+          const role = roles.find((r) => r.name === event.target.value);
+          run(() => updateUser(user.id, { role: event.target.value }), `${user.username} est maintenant ${role?.label ?? event.target.value}.`);
+        }}
         className={inputClass}
       >
-        {Object.keys(ROLES).map((role) => <option key={role}>{role}</option>)}
+        <RoleOptions roles={roles} current={user.role} />
       </select>
       <div className="col-span-2 flex gap-2 md:col-span-1 md:justify-end">
-        <Button variant="ghost" size="sm" onClick={resetPassword}>Mot de passe</Button>
-        {!self && <Button variant="danger" size="sm" onClick={remove}>Supprimer</Button>}
+        <Button variant="ghost" size="sm" disabled={locked} onClick={resetPassword}>Mot de passe</Button>
+        {!self && <Button variant="danger" size="sm" disabled={locked} onClick={remove}>Supprimer</Button>}
       </div>
     </div>
   );
 }
 
-function NewUser({ run }) {
+function NewUser({ roles, run }) {
+  const { session } = useSession();
+  const assignable = roles.filter((role) => canAssign(session.user, role));
+  const fallback = assignable.find((role) => role.name === "user")?.name ?? assignable.at(-1)?.name ?? "";
   const submit = async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -146,12 +161,12 @@ function NewUser({ run }) {
       <label className={label}>Mot de passe (8 min.)<input name="password" type="password" required minLength={8} autoComplete="new-password" className={inputClass} /></label>
       <label className={label}>
         Rôle
-        <select name="role" defaultValue="user" className={inputClass}>
-          {Object.keys(ROLES).map((role) => <option key={role}>{role}</option>)}
+        <select key={fallback} name="role" defaultValue={fallback} className={inputClass}>
+          <RoleOptions roles={roles} current={null} />
         </select>
       </label>
       <label className={label}>ID Discord<input name="discord_id" inputMode="numeric" placeholder="facultatif" autoComplete="off" spellCheck={false} className={inputClass} /></label>
-      <Button type="submit">Créer</Button>
+      <Button type="submit" disabled={!assignable.length}>Créer</Button>
     </Card>
   );
 }
