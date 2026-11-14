@@ -46,8 +46,9 @@ def _clean(fragment: str) -> str:
 # --------------------------------------------------------------------------- recherche
 
 async def _duckduckgo(session: aiohttp.ClientSession, query: str, limit: int) -> list[SearchResult]:
+    # kp=-2 : safe search désactivé
     async with session.post("https://html.duckduckgo.com/html/",
-                            data={"q": query, "kl": "fr-fr"}) as response:
+                            data={"q": query, "kl": "fr-fr", "kp": "-2"}) as response:
         if response.status != 200:
             raise WebError(f"DuckDuckGo a répondu HTTP {response.status}")
         page = await response.text()
@@ -64,7 +65,8 @@ async def _duckduckgo(session: aiohttp.ClientSession, query: str, limit: int) ->
 
 async def _searxng(session: aiohttp.ClientSession, base_url: str, query: str, limit: int) -> list[SearchResult]:
     async with session.get(f"{base_url.rstrip('/')}/search",
-                           params={"q": query, "format": "json", "language": "fr"}) as response:
+                           params={"q": query, "format": "json", "language": "fr",
+                                   "safesearch": 0}) as response:
         if response.status != 200:
             raise WebError(f"SearXNG a répondu HTTP {response.status}")
         data = await response.json()
@@ -74,7 +76,7 @@ async def _searxng(session: aiohttp.ClientSession, base_url: str, query: str, li
 
 async def _brave(session: aiohttp.ClientSession, api_key: str, query: str, limit: int) -> list[SearchResult]:
     async with session.get("https://api.search.brave.com/res/v1/web/search",
-                           params={"q": query, "count": limit, "search_lang": "fr"},
+                           params={"q": query, "count": limit, "search_lang": "fr", "safesearch": "off"},
                            headers={"X-Subscription-Token": api_key, "Accept": "application/json"}) as response:
         if response.status != 200:
             raise WebError(f"Brave Search a répondu HTTP {response.status}")
@@ -297,7 +299,8 @@ class DownloadedImage:
 async def _searxng_images(session: aiohttp.ClientSession, base_url: str, query: str,
                           limit: int) -> list[ImageResult]:
     async with session.get(f"{base_url.rstrip('/')}/search",
-                           params={"q": query, "format": "json", "categories": "images"}) as response:
+                           params={"q": query, "format": "json", "categories": "images",
+                                   "safesearch": 0}) as response:
         if response.status != 200:
             raise WebError(f"SearXNG a répondu HTTP {response.status}")
         data = await response.json()
@@ -308,7 +311,7 @@ async def _searxng_images(session: aiohttp.ClientSession, base_url: str, query: 
 async def _brave_images(session: aiohttp.ClientSession, api_key: str, query: str,
                         limit: int) -> list[ImageResult]:
     async with session.get("https://api.search.brave.com/res/v1/images/search",
-                           params={"q": query, "count": limit, "safesearch": "strict"},
+                           params={"q": query, "count": limit, "safesearch": "off"},
                            headers={"X-Subscription-Token": api_key, "Accept": "application/json"}) as response:
         if response.status != 200:
             raise WebError(f"Brave Images a répondu HTTP {response.status}")
@@ -321,7 +324,7 @@ async def _brave_images(session: aiohttp.ClientSession, api_key: str, query: str
 async def _openverse_images(session: aiohttp.ClientSession, query: str, limit: int) -> list[ImageResult]:
     """Openverse : API officielle, gratuite et sans clé (images sous licence libre)."""
     async with session.get("https://api.openverse.org/v1/images/",
-                           params={"q": query, "page_size": limit, "mature": "false"}) as response:
+                           params={"q": query, "page_size": limit, "mature": "true"}) as response:
         if response.status != 200:
             raise WebError(f"Openverse a répondu HTTP {response.status}")
         data = await response.json(content_type=None)
