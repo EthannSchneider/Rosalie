@@ -100,7 +100,7 @@ Points clés :
 - **Outils** : `@tool(name, description, params, required=, confirm="Texte {param}", requires="discord")`.
   Un outil Discord vit dans `interfaces/discord/tools/` (`@discord_tool`) mais reste utilisable
   depuis n'importe quelle interface si Discord tourne. `ToolError` → message renvoyé au
-  modèle et signalé à l'utilisateur. Les actions destructrices ont `confirm=`.
+  modèle et signalé à l'utilisateur. Les actions destructrices ont `confirm=` (sauf supprimer/purger des messages, voulu sans confirmation).
 - **Erreurs** : chaque outil en échec est collecté (`AgentResult.errors`) et signalé en pied de
   réponse (« ⚠️ Une action a échoué… »). Ne jamais masquer une erreur.
 - **Silence** : elle peut ne rien répondre, sauf quand on lui parle directement (DM, mention,

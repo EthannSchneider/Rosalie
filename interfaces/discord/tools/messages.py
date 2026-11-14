@@ -91,7 +91,7 @@ async def read_messages(ctx: ToolContext, channel: str | None = None, count: int
 
 @discord_tool("purge_messages", "Supprime les N derniers messages d'un salon.",
       {"channel": ("string", "Salon (vide = ici)"), "count": ("integer", "Nombre (max 100)")},
-      required=("count",), confirm="Supprimer les {count} derniers messages de « {channel} »")
+      required=("count",))
 async def purge_messages(ctx: ToolContext, count: int, channel: str | None = None) -> str:
     target = await _channel(ctx, channel)
     deleted = await target.purge(limit=_int(count, 10, 1, 100))
@@ -184,7 +184,7 @@ async def edit_message(ctx: ToolContext, message: str, content: str, channel: st
 
 @discord_tool("delete_message", "Supprime un message précis.",
       {"message": MESSAGE_PARAM, "channel": ("string", "Salon du message (vide = ici)")},
-      required=("message",), confirm="Supprimer le message « {message} »")
+      required=("message",))
 async def delete_message(ctx: ToolContext, message: str, channel: str | None = None) -> str:
     target = await _message(ctx, message, channel)
     author = target.author.display_name

@@ -22,7 +22,7 @@ invités*). Voir [Site web → Rôles](site-web.md#rôles-et-permissions).
 
 | Domaine | Outils |
 |---|---|
-| Messages | `send_message`, `send_dm`, `read_messages`, `search_messages`, `react`, `pin_message`, `edit_message` (les siens), `delete_message` ⚠️, `purge_messages` ⚠️, `create_poll` |
+| Messages | `send_message`, `send_dm`, `read_messages`, `search_messages`, `react`, `pin_message`, `edit_message` (les siens), `delete_message`, `purge_messages`, `create_poll` |
 | Serveur | `list_servers`, `server_info`, `list_channels`, `list_members`, `member_info`, `list_roles`, `create_channel`, `delete_channel` ⚠️, `create_thread`, `create_invite`, `set_status` |
 | Modération | `add_role`, `remove_role`, `set_nickname`, `timeout_member` ⚠️, `kick_member` ⚠️, `ban_member` ⚠️ |
 

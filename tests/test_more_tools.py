@@ -94,12 +94,9 @@ class MessageToolsTest(unittest.TestCase):
         self.assertIn("Erreur", run(self.ctx, "edit_message",
                                      {"message": str(self.other.id), "content": "x"}))
 
-    def test_delete_needs_confirmation(self):
-        self.ctx.interface().confirm_answer = False
-        run(self.ctx, "delete_message", {"message": str(self.other.id)})
-        self.assertFalse(self.other.deleted)
-        self.ctx.interface().confirm_answer = True
-        run(self.ctx, "delete_message", {"message": str(self.other.id)})
+    def test_delete_without_confirmation(self):
+        self.ctx.interface().confirm_answer = False      # même si on refuserait : pas de question
+        self.assertIn("supprimé", run(self.ctx, "delete_message", {"message": str(self.other.id)}))
         self.assertTrue(self.other.deleted)
 
     def test_search_and_unknown_message(self):
