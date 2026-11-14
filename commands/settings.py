@@ -19,7 +19,7 @@ from libs.config.schema import FIELDS, GROUPS, SettingError, display, find, pars
 USAGE = """Réglages de Rosalie (storages/config.sqlite3)
 
   python bot.py settings                        tous les réglages
-  python bot.py settings <groupe>               un groupe (ex : ollama, heartbeat)
+  python bot.py settings <groupe>               un groupe (ex : providers, modèles, heartbeat)
   python bot.py settings get <clé>              une valeur et son aide
   python bot.py settings set <clé> <valeur…>    modifier (listes : a,b,c ; oui/non)
   python bot.py settings set <clé>              secret (token, clé API) : demandé sans écho

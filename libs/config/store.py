@@ -24,7 +24,8 @@ from typing import Any
 from sqlalchemy import delete, select
 
 from libs.models.config import Meta, Setting
-from libs.config.schema import BY_KEY, FIELDS, PERSONA_NAME, SettingError, find, normalize
+from libs.config.schema import (BY_KEY, FIELDS, PERSONA_NAME, PROVIDER_LABELS, SettingError, find,
+                                normalize, split_model)
 from libs.db import Database
 
 DEFAULT_PERSONA = "rosalie"
@@ -126,6 +127,7 @@ class ConfigStore:
                 if value == field.default:
                     value = None   # pas besoin de stocker la valeur par défaut
             prepared[field.key] = value
+        self.__check_models(prepared)
         changed = [key for key, value in prepared.items()
                    if self.__values.get(key, BY_KEY[key].default)
                    != (BY_KEY[key].default if value is None else value)]
@@ -154,6 +156,29 @@ class ConfigStore:
             session.delete(row)
         self.refresh()
         return value
+
+    def __check_models(self, prepared: dict[str, Any]):
+        """Chaque modèle choisi doit venir d'un fournisseur activé et, pour Ollama, figurer dans
+        les modèles autorisés (si la liste n'est pas vide). Vérifié sur l'état final, dès qu'on
+        touche à un modèle, aux fournisseurs activés ou aux modèles autorisés."""
+        watched = {"providers", "ollama_allowed_models"} | {f.key for f in FIELDS if f.kind == "model"}
+        if not watched & prepared.keys():
+            return
+        after = self.values()
+        after.update({key: BY_KEY[key].default if value is None else value
+                      for key, value in prepared.items()})
+        allowed = after["ollama_allowed_models"]
+        for field in FIELDS:
+            if field.kind != "model" or not after[field.key]:
+                continue
+            provider, name = split_model(after[field.key])
+            if provider not in after["providers"]:
+                raise SettingError(f"{field.key} utilise {PROVIDER_LABELS[provider]}, qui n'est pas "
+                                   "dans les fournisseurs activés (providers)")
+            if provider == "ollama" and allowed and name not in allowed \
+                    and f"{name}:latest" not in allowed:
+                raise SettingError(f"{field.key} : « {name} » n'est pas dans les modèles Ollama "
+                                   "autorisés (ollama_allowed_models)")
 
     def __check(self, kind: str, value: Any):
         if kind == "persona" and self.persona_text(value) is None:

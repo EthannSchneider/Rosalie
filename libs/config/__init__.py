@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from libs.config.schema import BY_ENV, BY_KEY, FIELDS, SettingError, parse
+from libs.config.schema import BY_ENV, BY_KEY, FIELDS, PROVIDERS, SettingError, parse, split_model
 from libs.config.store import DEFAULT_PERSONA, ConfigStore
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -57,12 +57,19 @@ class Config:
     persona: str                       # nom de la personnalité active (libs/llm/persona.py)
     names: tuple[str, ...]             # noms qui la « réveillent » dans un message
 
-    # Ollama
+    # Providers : lesquels sont activés, et comment les joindre
+    providers: tuple[str, ...]
     ollama_url: str
-    ollama_model: str
-    decider_model: str                 # vide dans les réglages = même modèle (résolu ici)
-    embed_model: str
+    ollama_allowed_models: tuple[str, ...]   # vide = tous
     ollama_keep_alive: str
+    openai_api_key: str
+    anthropic_api_key: str
+    gemini_api_key: str
+
+    # Modèles : toujours « fournisseur:nom » (libs.config.schema.split_model)
+    chat_model: str
+    decider_model: str                 # vide dans les réglages = modèle principal (résolu ici)
+    embed_model: str
     num_ctx: int
     temperature: float
 
@@ -107,7 +114,13 @@ class Config:
     storage_dir: Path
 
     def __repr__(self) -> str:   # jamais de secret dans un log
-        return f"Config(model={self.ollama_model!r}, persona={self.persona!r}, ...)"
+        return f"Config(model={self.chat_model!r}, persona={self.persona!r}, ...)"
+
+    @property
+    def api_keys(self) -> dict[str, str]:
+        """Clé API de chaque fournisseur distant."""
+        return {"openai": self.openai_api_key, "anthropic": self.anthropic_api_key,
+                "gemini": self.gemini_api_key}
 
     @property
     def dedicated(self) -> frozenset[str]:
@@ -122,12 +135,14 @@ class Config:
             value = values.get(field.key, field.default)
             if field.kind == "ids":
                 value = frozenset(int(item) for item in value)
-            elif field.kind in ("list", "tools"):
+            elif field.kind in ("list", "tools", "choices"):
                 value = tuple(value)
+            elif field.kind == "model" and value:   # anciennes valeurs sans préfixe : Ollama
+                value = ":".join(split_model(value))
             elif field.kind == "float":
                 value = float(value)
             converted[field.key] = value
-        converted["decider_model"] = converted["decider_model"] or converted["ollama_model"]
+        converted["decider_model"] = converted["decider_model"] or converted["chat_model"]
         converted["names"] = tuple(name.lower() for name in converted["names"]) or ("rosalie",)
         return cls(**converted, storage_dir=storage or storage_dir())
 
@@ -167,6 +182,7 @@ def load_config(warn: bool = True) -> tuple[Config, ConfigStore]:
     old_owners = store.take_legacy("owner_ids")   # réglage supprimé : remplacé par les comptes
     if old_owners:
         _remember_legacy_owners(store, old_owners)
+    _migrate_models(store)
     if store.meta(ENV_IMPORTED) is None:
         imported = import_env(store, os.environ, storage)
         if imported:
@@ -198,7 +214,7 @@ def import_env(store: ConfigStore, environ: Mapping[str, str], storage: Path,
         except (OSError, json.JSONDecodeError):
             data = {}
         if data.get("model"):
-            values["ollama_model"] = data["model"]
+            values["chat_model"] = data["model"]
         if isinstance(data.get("initiative"), bool):
             values["initiative"] = data["initiative"]
 
@@ -219,6 +235,27 @@ def import_env(store: ConfigStore, environ: Mapping[str, str], storage: Path,
             Log.warning(f"Import du .env : {error} (ignoré)")
     store.set_meta(ENV_IMPORTED, "1")
     return applied
+
+
+def _migrate_models(store: ConfigStore):
+    """Anciens réglages (un seul fournisseur, un modèle par fournisseur) -> « fournisseur:nom »
+    dans chat_model, et le fournisseur ajouté à ceux activés."""
+    from libs.log import Log
+    old_defaults = {"openai": "gpt-4o-mini", "anthropic": "claude-sonnet-4-5",
+                    "gemini": "gemini-2.5-flash"}
+    provider = store.take_legacy("llm_provider") or "ollama"
+    models = {"ollama": store.take_legacy("ollama_model"),
+              **{name: store.take_legacy(f"{name}_model") or default
+                 for name, default in old_defaults.items()}}
+    model = models.get(provider) if provider in PROVIDERS else None
+    if not model or "chat_model" in store.overrides():
+        return
+    try:
+        if provider not in store.get("providers"):
+            store.set("providers", [*store.get("providers"), provider])
+        store.set("chat_model", f"{provider}:{model}")
+    except SettingError as error:
+        Log.warning(f"Ancien modèle « {model} » non repris : {error}")
 
 
 def _remember_legacy_owners(store: ConfigStore, ids):

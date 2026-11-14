@@ -50,7 +50,7 @@ leur dit rien de privé.
 | Commande | Effet |
 |---|---|
 | `/rosalie status` | modèle, Ollama, mémoire, heartbeat, relances |
-| `/rosalie model <nom>` | changer de modèle Ollama (enregistré dans les réglages) |
+| `/rosalie model <nom>` | changer de modèle principal : un modèle Ollama, ou `fournisseur:modèle` (enregistré dans les réglages) |
 | `/rosalie here` | (dés)activer « répondre à tout » dans ce salon |
 | `/rosalie reset` | effacer l'historique de ce salon (les souvenirs restent) |
 | `/rosalie stop` | mettre fin à la conversation en cours |

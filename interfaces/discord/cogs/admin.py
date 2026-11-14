@@ -2,16 +2,19 @@ import discord
 
 from interfaces.discord.utils import conversation_key
 from libs.config import SettingError
+from libs.config.schema import split_model
 from libs.llm.ollama import OllamaError
 from libs.log import Log
 from interfaces.discord.utils import permissions_of, require
 
 
 async def _model_autocomplete(ctx: discord.AutocompleteContext) -> list[str]:
-    try:
-        models = await ctx.bot.rosalie.llm.list_models()
-    except OllamaError:
-        return []
+    models = list(ctx.bot.rosalie.config.ollama_allowed_models)
+    if not models:   # pas de liste de modèles autorisés : tous ceux installés
+        try:
+            models = await ctx.bot.rosalie.llm.list_models()
+        except OllamaError:
+            return []
     return [model for model in models if ctx.value.lower() in model.lower()][:25]
 
 
@@ -44,7 +47,9 @@ class Admin(discord.Cog):
         try:
             models = await bot.rosalie.llm.list_models()
             ollama = f"✅ joignable ({len(models)} modèles)"
-            for model in {bot.rosalie.llm.model, bot.rosalie.config.embed_model}:
+            used = {split_model(ref) for ref in (bot.rosalie.llm.model, bot.rosalie.config.decider_model,
+                                                 bot.rosalie.config.embed_model)}
+            for model in sorted(name for provider, name in used if provider == "ollama"):
                 if model not in models and f"{model}:latest" not in models:
                     ollama += f"\n⚠️ `{model}` non installé (`python bot.py pull {model}`)"
         except OllamaError as error:
@@ -63,13 +68,14 @@ class Admin(discord.Cog):
         embed.add_field(name="Relances prévues", value=str(len(bot.rosalie.agenda.pending())))
         await ctx.respond(embed=embed, ephemeral=True)
 
-    @rosalie.command(name="model", description="Changer le modèle Ollama utilisé")
+    @rosalie.command(name="model", description="Changer le modèle principal")
     async def model(self, ctx: discord.ApplicationContext,
-                    name: discord.Option(str, "Nom du modèle Ollama", autocomplete=_model_autocomplete)):
+                    name: discord.Option(str, "Modèle Ollama, ou fournisseur:modèle (ex : openai:gpt-4o-mini)",
+                                         autocomplete=_model_autocomplete)):
         if not await require(ctx, "settings"):
             return
         try:
-            self.__bot.rosalie.update_settings({"ollama_model": name})
+            self.__bot.rosalie.update_settings({"chat_model": name})
         except SettingError as error:
             await ctx.respond(f"Refusé : {error}", ephemeral=True)
             return

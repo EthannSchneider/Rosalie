@@ -79,7 +79,8 @@ libs/webui/                   backend MVC du site : views/ (JSON) · controllers
                               api/v1.py (routes /api/v1 + droits) · router/http/security/events/server
 interfaces/web/               WebInterface (chat : un compte = une conversation « web:<id> »)
 migrations/                   Alembic : config/ (config.sqlite3), main/ (rosalie.sqlite3)
-libs/llm/                     ollama.py (client), persona.py ; personas/*.md = intégrées (lecture seule)
+libs/llm/                     ollama.py (client ; route « fournisseur:nom » vers Ollama ou remote.py :
+                              OpenAI, Anthropic, Gemini), persona.py ; personas/*.md = intégrées
 webui/src/                    React : api/ · context/ · hooks/ · components/ · pages/ (Tailwind)
 interfaces/__init__.py        AVAILABLE = {"discord", "terminal"} ; load(name, rosalie)
 interfaces/discord/           DiscordInterface, cogs/ (events, admin, training, reload),
@@ -109,6 +110,12 @@ Points clés :
   d'étape envoyé tous les `PROGRESS_EVERY` tours (6).
 - **Lecture Discord** : `read_messages` 50 max par appel, enchaînable avec `before=<id>` ;
   `search_messages` parcourt tout l'historique (45 s par appel, puis `before`).
+
+- **Fournisseurs et modèles** : onglet Providers = fournisseurs activés (`providers`) + leur
+  configuration (adresse Ollama, `ollama_allowed_models`, clés API) ; onglet Modèles =
+  `chat_model`, `decider_model`, `embed_model`, toujours « fournisseur:nom »
+  (`schema.split_model` ; sans préfixe = Ollama), donc mélangeables. `ConfigStore` refuse un
+  modèle dont le fournisseur n'est pas activé ou, pour Ollama, hors des modèles autorisés.
 
 - **Réglages à chaud** : `Rosalie.config` est une propriété qui relit `ConfigStore` (cache
   mémoire, `PRAGMA data_version` vérifié au plus une fois par seconde) et applique au client

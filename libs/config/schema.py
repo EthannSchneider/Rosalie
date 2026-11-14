@@ -9,7 +9,11 @@ C'est la source unique pour :
 Ajouter un réglage = un `Field` ici + l'attribut du même nom dans `Config` (+ docs).
 
 Valeurs stockées (JSON) selon `kind` :
-  bool, int, float, str, secret, model, hours, choice -> la valeur telle quelle
+  bool, int, float, str, secret, hours, choice -> la valeur telle quelle
+  model                                        -> « fournisseur:nom » (ex : ollama:qwen3:8b,
+                                                  openai:gpt-4o-mini) ; sans préfixe = Ollama.
+                                                  `choices` = fournisseurs possibles (vide = tous)
+  choices                                      -> liste de chaînes prises dans `choices`
   ids                                                  -> liste de chaînes (IDs Discord : trop
                                                           grands pour les nombres JavaScript)
   list, tools                                          -> liste de chaînes
@@ -48,8 +52,21 @@ class Field:
                 "restart": self.restart, "secret": self.kind == "secret"}
 
 
-GROUPS = ("Discord", "Personnalité", "Ollama", "Conversation", "Outils", "Internet",
+GROUPS = ("Discord", "Personnalité", "Providers", "Modèles", "Conversation", "Outils", "Internet",
           "Exécution de code", "Rythme", "Heartbeat")
+
+PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
+PROVIDER_LABELS = {"ollama": "Ollama", "openai": "OpenAI", "anthropic": "Anthropic",
+                   "gemini": "Gemini"}
+
+
+def split_model(ref: str) -> tuple[str, str]:
+    """« fournisseur:nom » -> (fournisseur, nom). Sans préfixe connu, c'est un modèle Ollama
+    (« qwen3:8b » -> ("ollama", "qwen3:8b")) : les anciennes valeurs restent valables."""
+    head, sep, tail = ref.partition(":")
+    if sep and head in PROVIDERS:
+        return head, tail
+    return "ollama", ref
 
 FIELDS: tuple[Field, ...] = (
     # --- Discord ----------------------------------------------------------------------------
@@ -78,23 +95,40 @@ FIELDS: tuple[Field, ...] = (
           "Mots qui la réveillent dans un message. Le premier est le nom qu'elle se donne.",
           env="ROSALIE_NAMES"),
 
-    # --- Ollama -----------------------------------------------------------------------------
-    Field("ollama_url", "str", "http://127.0.0.1:11434", "Ollama", "Adresse d'Ollama",
+    # --- Providers : lesquels sont utilisables, et comment les joindre ----------------------
+    Field("providers", "choices", ["ollama"], "Providers", "Fournisseurs activés",
+          "Seuls les fournisseurs activés peuvent être choisis dans l'onglet Modèles.",
+          choices=PROVIDERS),
+    Field("ollama_url", "str", "http://127.0.0.1:11434", "Providers", "Adresse d'Ollama",
           env="OLLAMA_URL"),
-    Field("ollama_model", "model", "qwen3:8b", "Ollama", "Modèle",
-          "Après le fine-tune : rosalie. Aussi : /rosalie model.", env="OLLAMA_MODEL"),
-    Field("decider_model", "model", "", "Ollama", "Modèle « dois-je répondre ? »",
-          "Vide = le même modèle.", env="DECIDER_MODEL"),
-    Field("embed_model", "model", "nomic-embed-text", "Ollama", "Modèle d'embeddings",
-          "Mémoire à long terme. En changer rend les souvenirs déjà enregistrés difficiles à "
-          "retrouver.", env="EMBED_MODEL", restart=True),
-    Field("ollama_keep_alive", "str", "30m", "Ollama", "Garder le modèle chargé",
+    Field("ollama_allowed_models", "list", [], "Providers", "Modèles Ollama autorisés",
+          "Seuls ces modèles peuvent être choisis (onglet Modèles, /rosalie model). "
+          "Vide = tous ceux installés."),
+    Field("ollama_keep_alive", "str", "30m", "Providers", "Garder le modèle chargé",
           "Durée pendant laquelle Ollama garde le modèle en mémoire (ex : 30m, 2h, -1).",
           env="OLLAMA_KEEP_ALIVE"),
-    Field("num_ctx", "int", 16384, "Ollama", "Contexte (tokens)",
+    Field("openai_api_key", "secret", "", "Providers", "Clé API OpenAI",
+          "Clé API depuis la plateforme OpenAI."),
+    Field("anthropic_api_key", "secret", "", "Providers", "Clé API Anthropic",
+          "Clé API depuis la console Anthropic."),
+    Field("gemini_api_key", "secret", "", "Providers", "Clé API Gemini",
+          "Clé API Google AI Studio."),
+
+    # --- Modèles : quel modèle (de quel fournisseur) pour quel usage ------------------------
+    Field("chat_model", "model", "ollama:qwen3:8b", "Modèles", "Modèle principal",
+          "Conversations et actions. Après le fine-tune : rosalie (Ollama). Aussi : /rosalie model.",
+          env="OLLAMA_MODEL"),
+    Field("decider_model", "model", "", "Modèles", "Modèle « dois-je répondre ? »",
+          "Petit appel qui tranche les cas ambigus, et prise de notes. Vide = le modèle principal.",
+          env="DECIDER_MODEL"),
+    Field("embed_model", "model", "ollama:nomic-embed-text", "Modèles", "Modèle d'embeddings",
+          "Mémoire à long terme. En changer rend les souvenirs déjà enregistrés difficiles à "
+          "retrouver. Anthropic ne propose pas d'embeddings.", env="EMBED_MODEL", restart=True,
+          choices=("ollama", "openai", "gemini")),
+    Field("num_ctx", "int", 16384, "Modèles", "Contexte (tokens)",
           "Sa mémoire de travail. Trop petit => réponses coupées ou question perdue.",
           env="OLLAMA_NUM_CTX", min=2048, max=1_048_576),
-    Field("temperature", "float", 0.6, "Ollama", "Température",
+    Field("temperature", "float", 0.6, "Modèles", "Température",
           "Plus haut = plus créative, plus bas = plus sage.", env="OLLAMA_TEMPERATURE",
           min=0, max=2),
 
@@ -184,7 +218,7 @@ _FALSE = ("0", "false", "no", "non", "off", "n")
 
 
 def find(name: str) -> Field:
-    """Un réglage par son nom (ollama_model) ou son ancien nom .env (OLLAMA_MODEL)."""
+    """Un réglage par son nom (chat_model) ou son ancien nom .env (OLLAMA_MODEL)."""
     field = BY_KEY.get(name.strip().lower()) or BY_ENV.get(name.strip().upper())
     if field is None:
         raise SettingError(f"réglage inconnu « {name} »")
@@ -200,8 +234,8 @@ def parse(field: Field, text: str) -> Any:
         if text.lower() in _FALSE:
             return False
         raise SettingError(f"{field.key} : « {text} » n'est pas oui/non")
-    if field.kind in ("ids", "list", "tools"):
-        separators = r"[,\s]+" if field.kind in ("ids", "tools") else r","
+    if field.kind in ("ids", "list", "tools", "choices"):
+        separators = r"[,\s]+" if field.kind in ("ids", "tools", "choices") else r","
         return normalize(field, [part for part in re.split(separators, text) if part.strip()])
     return normalize(field, text)
 
@@ -226,7 +260,7 @@ def normalize(field: Field, value: Any) -> Any:
         if field.max is not None and number > field.max:
             raise SettingError(f"{field.key} : maximum {_fmt(field.max)}")
         return number
-    if kind in ("ids", "list", "tools"):
+    if kind in ("ids", "list", "tools", "choices"):
         items = value.split(",") if isinstance(value, str) else value
         if not isinstance(items, (list, tuple)):
             raise SettingError(f"{field.key} : liste attendue")
@@ -236,6 +270,12 @@ def normalize(field: Field, value: Any) -> Any:
             if bad:
                 raise SettingError(f"{field.key} : « {bad[0]} » n'est pas un identifiant numérique")
             return sorted(set(cleaned), key=int)
+        if kind == "choices":
+            cleaned = [item.lower() for item in cleaned]
+            bad = [item for item in cleaned if item not in field.choices]
+            if bad:
+                raise SettingError(f"{field.key} : choisir parmi {', '.join(field.choices)}")
+            return [choice for choice in field.choices if choice in cleaned]   # ordre du schéma
         return list(dict.fromkeys(cleaned))
     if not isinstance(value, str):
         raise SettingError(f"{field.key} : texte attendu")
@@ -244,6 +284,19 @@ def normalize(field: Field, value: Any) -> Any:
         value = value.lower()
         if value not in field.choices:
             raise SettingError(f"{field.key} : choisir parmi {', '.join(field.choices)}")
+    elif kind == "model":
+        if not value:
+            if field.default != "":
+                raise SettingError(f"{field.key} : modèle attendu")
+            return ""
+        provider, name = split_model(value)
+        name = name.strip()
+        if not name:
+            raise SettingError(f"{field.key} : nom de modèle attendu")
+        if provider not in (field.choices or PROVIDERS):
+            raise SettingError(f"{field.key} : {PROVIDER_LABELS[provider]} ne convient pas ici "
+                               f"(choisir parmi {', '.join(field.choices)})")
+        value = f"{provider}:{name}"
     elif kind == "hours":
         if value and not re.fullmatch(r"([01]?\d|2[0-3])-([01]?\d|2[0-3])", value):
             raise SettingError(f"{field.key} : format attendu « 23-8 » (ou vide)")

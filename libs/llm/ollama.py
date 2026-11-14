@@ -1,5 +1,7 @@
 import aiohttp
 
+from libs.config.schema import PROVIDER_LABELS, split_model
+
 
 CONTEXT_FULL = ("la conversation ne rentre plus dans la mémoire de travail du modèle : Ollama a "
                 "coupé des messages (augmente OLLAMA_NUM_CTX, ou OLLAMA_CONTEXT_LENGTH sur le serveur)")
@@ -10,14 +12,19 @@ class OllamaError(Exception):
 
 
 class OllamaClient:
-    """Petit client async pour l'API HTTP d'Ollama (/api/chat, /api/tags, /api/pull)."""
+    """Client async des modèles. Un modèle s'écrit « fournisseur:nom » (sans préfixe : Ollama) :
+    Ollama est appelé ici (/api/chat, /api/embed, /api/tags, /api/pull), les autres fournisseurs
+    passent par `RemoteClient` (libs/llm/remote.py). On peut donc mélanger les fournisseurs :
+    un modèle principal chez l'un, les embeddings chez l'autre."""
 
     def __init__(self, base_url: str, model: str, keep_alive: str = "30m",
                  options: dict | None = None, timeout: int = 300):
         self.base_url = base_url.rstrip("/")
-        self.model = model
+        self.model = model                      # modèle principal, « fournisseur:nom »
         self.keep_alive = keep_alive
         self.options = options or {}
+        self.api_keys: dict[str, str] = {}      # fournisseur distant -> clé API
+        self.__remote = None
         self.__timeout = aiohttp.ClientTimeout(total=timeout)
         self.__session: aiohttp.ClientSession | None = None
 
@@ -35,8 +42,13 @@ class OllamaClient:
                            model: str | None = None, options: dict | None = None,
                            format: str | dict | None = None) -> dict:
         """Retourne le message brut de l'assistant (content + éventuels tool_calls)."""
+        provider, name = split_model(model or self.model)
+        if provider != "ollama":
+            return await self.__get_remote().chat_message(
+                provider, name, self.__key(provider), messages, tools=tools,
+                options={**self.options, **(options or {})}, format=format)
         payload = {
-            "model": model or self.model,
+            "model": name,
             "messages": messages,
             "stream": False,
             "think": False,
@@ -53,11 +65,28 @@ class OllamaClient:
         return message
 
     async def embed(self, texts: list[str], model: str) -> list[list[float]]:
-        data = await self.__post("/api/embed", {"model": model, "input": texts,
+        provider, name = split_model(model)
+        if provider != "ollama":
+            return await self.__get_remote().embed(provider, name, self.__key(provider), texts)
+        data = await self.__post("/api/embed", {"model": name, "input": texts,
                                                 "keep_alive": self.keep_alive})
         return data.get("embeddings", [])
 
+    def __get_remote(self):
+        if self.__remote is None:
+            from libs.llm.remote import RemoteClient   # import tardif : remote importe OllamaError
+            self.__remote = RemoteClient()
+        return self.__remote
+
+    def __key(self, provider: str) -> str:
+        key = self.api_keys.get(provider, "")
+        if not key:
+            raise OllamaError(f"clé API {PROVIDER_LABELS.get(provider, provider)} manquante "
+                              "(Réglages → Providers)")
+        return key
+
     async def list_models(self) -> list[str]:
+        """Modèles installés dans Ollama."""
         try:
             async with self.__get_session().get(f"{self.base_url}/api/tags") as response:
                 if response.status != 200:
@@ -93,3 +122,5 @@ class OllamaClient:
     async def close(self):
         if self.__session and not self.__session.closed:
             await self.__session.close()
+        if self.__remote:
+            await self.__remote.close()

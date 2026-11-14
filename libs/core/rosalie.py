@@ -71,10 +71,11 @@ class Rosalie:
         self.persona = Persona(lambda: self.config.persona, store)
         self.llm = OllamaClient(
             base_url=config.ollama_url,
-            model=config.ollama_model,
+            model=config.chat_model,
             keep_alive=config.ollama_keep_alive,
             options={"num_ctx": config.num_ctx, "temperature": config.temperature},
         )
+        self.llm.api_keys = config.api_keys
         self.agenda = Agenda(config.storage_dir / "agenda.json")
         self.memory = ConversationMemory(config.storage_dir / "memory", config.history_size)
         self.long_term = LongTermMemory(config.storage_dir / "long_term.sqlite3", self.llm,
@@ -137,8 +138,9 @@ class Rosalie:
     def __apply(self, new: Config):
         old, self.__config = self.__config, new
         self.llm.base_url = new.ollama_url.rstrip("/")
-        self.llm.model = new.ollama_model
+        self.llm.model = new.chat_model
         self.llm.keep_alive = new.ollama_keep_alive
+        self.llm.api_keys = new.api_keys
         self.llm.options = {**self.llm.options, "num_ctx": new.num_ctx,
                             "temperature": new.temperature}
         changed = [field.key for field in FIELDS if getattr(old, field.key) != getattr(new, field.key)]
@@ -248,9 +250,10 @@ class Rosalie:
             reply = await self.speak(conversation, author, reply_to=incoming.message_id,
                                      query=incoming.text, must_reply=direct)
         except OllamaError as error:
-            Log.error(f"Ollama error: {error}")
-            text = "Je n'arrive pas à joindre mon cerveau… Ollama est lancé ?" \
-                if "unreachable" in str(error) else f"⚠️ Problème avec mon cerveau (Ollama) : {error}"
+            Log.error(f"Erreur du fournisseur de modèle : {error}")
+            text = ("Je n'arrive pas à joindre mon fournisseur de modèle. Vérifie ses réglages."
+                    if "inaccessible" in str(error) or "unreachable" in str(error)
+                    else f"⚠️ Problème avec mon fournisseur de modèle : {error}")
             await self.send(conversation, text, reply_to=incoming.message_id)
             return None
         except Exception as error:

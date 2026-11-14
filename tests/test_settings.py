@@ -42,7 +42,7 @@ class SchemaTest(unittest.TestCase):
                 self.assertEqual(normalize(field, field.default), field.default, field.key)
 
     def test_find_accepts_env_names(self):
-        self.assertIs(find("OLLAMA_MODEL"), BY_KEY["ollama_model"])
+        self.assertIs(find("OLLAMA_MODEL"), BY_KEY["chat_model"])
         self.assertIs(find("ROSALIE_TOKEN"), BY_KEY["discord_token"])
         with self.assertRaises(SettingError):
             find("nope")
@@ -61,27 +61,113 @@ class SchemaTest(unittest.TestCase):
 
     def test_config_conversion(self):
         config = Config.from_values({"channel_ids": ["1311111111111111111"], "decider_model": "",
-                                     "ollama_model": "m", "names": ["Rosa"]}, Path("/tmp"))
+                                     "chat_model": "m", "names": ["Rosa"]}, Path("/tmp"))
         self.assertEqual(config.channel_ids, frozenset({1311111111111111111}))
-        self.assertEqual(config.decider_model, "m")
+        self.assertEqual(config.chat_model, "ollama:m")        # ancienne valeur sans préfixe
+        self.assertEqual(config.decider_model, "ollama:m")     # vide = modèle principal
         self.assertEqual(config.names, ("rosa",))
         self.assertNotIn("token", repr(config).lower())
 
 
 class ConfigStoreTest(StoreCase):
     def test_defaults_and_update(self):
-        self.assertEqual(self.store.get("ollama_model"), "qwen3:8b")
-        self.assertEqual(self.store.update({"ollama_model": "rosalie", "num_ctx": "8192"}),
-                         ["ollama_model", "num_ctx"])
+        self.assertEqual(self.store.get("chat_model"), "ollama:qwen3:8b")
+        self.assertEqual(self.store.update({"chat_model": "rosalie", "num_ctx": "8192"}),
+                         ["chat_model", "num_ctx"])
+        self.assertEqual(self.store.get("chat_model"), "ollama:rosalie")
         self.assertEqual(self.store.values()["num_ctx"], 8192)
-        self.assertEqual(self.store.update({"ollama_model": "rosalie"}), [])
-        self.store.reset("ollama_model")
-        self.assertNotIn("ollama_model", self.store.overrides())
+        self.assertEqual(self.store.update({"chat_model": "ollama:rosalie"}), [])
+        self.store.reset("chat_model")
+        self.assertNotIn("chat_model", self.store.overrides())
+
+    def test_models_follow_enabled_providers(self):
+        """Un modèle ne peut venir que d'un fournisseur activé ; on peut mélanger les fournisseurs."""
+        with self.assertRaises(SettingError):
+            self.store.set("chat_model", "openai:gpt-4o-mini")       # OpenAI pas activé
+        self.store.update({"providers": ["openai", "ollama"], "chat_model": "openai:gpt-4o-mini"})
+        self.assertEqual(self.store.get("providers"), ["ollama", "openai"])
+        config = Config.load(self.store, self.root)
+        self.assertEqual((config.chat_model, config.embed_model),
+                         ("openai:gpt-4o-mini", "ollama:nomic-embed-text"))
+        self.assertEqual(config.decider_model, "openai:gpt-4o-mini")
+        with self.assertRaises(SettingError):
+            self.store.set("providers", ["ollama"])                  # encore utilisé par chat_model
+        with self.assertRaises(SettingError):
+            self.store.set("providers", ["openai"])                  # embeddings sur Ollama
+        with self.assertRaises(SettingError):
+            self.store.update({"providers": ["ollama", "openai", "anthropic"],
+                               "embed_model": "anthropic:x"})        # pas d'embeddings Anthropic
+        with self.assertRaises(SettingError):
+            self.store.set("providers", ["mistral"])
+
+    def test_client_routes_by_provider(self):
+        """« fournisseur:nom » part chez ce fournisseur ; sans clé API, erreur claire (aucun réseau)."""
+        from libs.llm.ollama import OllamaClient, OllamaError
+
+        async def scenario():
+            client = OllamaClient("http://127.0.0.1:1", "openai:gpt-4o-mini")
+            calls = []
+
+            class Remote:
+                async def chat_message(self, provider, model, key, messages, **kwargs):
+                    calls.append((provider, model, key, kwargs["options"]))
+                    return {"content": "ok"}
+
+                async def embed(self, provider, model, key, texts):
+                    calls.append((provider, model, key))
+                    return [[1.0]]
+
+                async def close(self):
+                    pass
+            client._OllamaClient__remote = Remote()
+            with self.assertRaises(OllamaError) as raised:
+                await client.chat([{"role": "user", "content": "salut"}])
+            self.assertIn("OpenAI", str(raised.exception))
+            client.api_keys = {"openai": "k1", "gemini": "k2"}
+            client.options = {"temperature": 0.6}
+            self.assertEqual(await client.chat([], options={"num_predict": 3}), "ok")
+            self.assertEqual(await client.embed(["a"], "gemini:text-embedding-004"), [[1.0]])
+            self.assertEqual(calls, [("openai", "gpt-4o-mini", "k1", {"temperature": 0.6, "num_predict": 3}),
+                                     ("gemini", "text-embedding-004", "k2")])
+            await client.close()
+        asyncio.run(scenario())
+
+    def test_ollama_allowed_models(self):
+        with self.assertRaises(SettingError):
+            self.store.set("chat_model", "ollama:")                  # nom manquant
+        with self.assertRaises(SettingError):
+            self.store.set("ollama_allowed_models", ["rosalie"])     # les modèles actuels n'y sont pas
+        self.store.set("ollama_allowed_models", ["qwen3:8b", "nomic-embed-text", "rosalie:latest"])
+        self.store.set("chat_model", "rosalie")
+        with self.assertRaises(SettingError):
+            self.store.set("decider_model", "ollama:llama3")
+        self.store.set("decider_model", "qwen3:8b")
+        self.store.reset("ollama_allowed_models")
+        self.store.set("decider_model", "ollama:llama3")             # liste vide = tous
+
+    def test_old_single_provider_settings_are_migrated(self):
+        import os
+        import sqlite3
+        from unittest import mock
+        from libs.config import load_config
+        self.store.set_meta("env_imported", "1")
+        db = sqlite3.connect(self.store.path)
+        db.executemany("INSERT INTO settings (key, value) VALUES (?, ?)",
+                       [("llm_provider", '"anthropic"'), ("anthropic_model", '"claude-x"'),
+                        ("ollama_model", '"rosalie"')])
+        db.commit()
+        db.close()
+        with mock.patch.dict(os.environ, {"STORAGE_DIR": str(self.root)}, clear=True):
+            config, store = load_config()
+        self.assertEqual(config.chat_model, "anthropic:claude-x")
+        self.assertEqual(config.providers, ("ollama", "anthropic"))
+        self.assertIsNone(store.take_legacy("ollama_model"))
+        store.close()
 
     def test_update_is_all_or_nothing(self):
         with self.assertRaises(SettingError):
-            self.store.update({"ollama_model": "x", "num_ctx": 1})
-        self.assertEqual(self.store.get("ollama_model"), "qwen3:8b")
+            self.store.update({"chat_model": "x", "num_ctx": 1})
+        self.assertEqual(self.store.get("chat_model"), "ollama:qwen3:8b")
 
     def test_unknown_tool_and_persona_refused(self):
         with self.assertRaises(SettingError):
@@ -193,14 +279,14 @@ class ImportEnvTest(StoreCase):
         self.assertEqual(self.store.get("discord_token"), "secret")
         from libs.config import legacy_owner_ids
         self.assertEqual(legacy_owner_ids(self.store), frozenset({1, 2}))   # plus un réglage
-        self.assertEqual(self.store.get("ollama_model"), "rosalie")   # settings.json gagne
+        self.assertEqual(self.store.get("chat_model"), "ollama:rosalie")   # settings.json gagne
         self.assertIs(self.store.get("initiative"), False)
         self.assertEqual(self.store.get("num_ctx"), 16384)            # valeur invalide ignorée
         self.assertEqual(self.store.get("persona"), "moi")
         self.assertIn("discord_token", imported)
         self.assertEqual(import_env(self.store, {"OLLAMA_MODEL": "autre"}, self.root), [])
         self.assertEqual(import_env(self.store, {"OLLAMA_MODEL": "autre"}, self.root, force=True),
-                         ["ollama_model"])
+                         ["chat_model"])
 
     def test_old_owner_setting_is_migrated(self):
         import os
@@ -260,14 +346,15 @@ class SettingsCommandTest(StoreCase):
     def test_commands(self):
         code, text = self.run_command()
         self.assertEqual(code, 0)
-        self.assertIn("ollama_model", text)
+        self.assertIn("chat_model", text)
         self.assertEqual(self.run_command("set", "OLLAMA_NUM_CTX", "8192")[0], 0)
         self.assertEqual(self.store.get("num_ctx"), 8192)
         self.run_command("set", "names", "rosalie", "rosa")
         self.assertEqual(self.store.get("names"), ["rosalie", "rosa"])
         self.run_command("reset", "num_ctx")
         self.assertEqual(self.store.get("num_ctx"), 16384)
-        self.assertIn("[Ollama]", self.run_command("ollama")[1])
+        self.assertIn("[Providers]", self.run_command("providers")[1])
+        self.assertIn("[Modèles]", self.run_command("modèles")[1])
         self.run_command("tools", "disable", "weather", "web_search")
         self.assertEqual(self.store.get("disabled_tools"), ["weather", "web_search"])
         self.run_command("tools", "enable", "weather")

@@ -28,14 +28,24 @@ gardé de côté jusqu'à ce que tu lies ton compte à Discord, voir [Site web](
 
 ## Page Réglages du site
 
-Une page par groupe (Discord, Personnalité, Ollama, Conversation, Outils, Internet,
+Une page par groupe (Discord, Personnalité, Providers, Modèles, Conversation, Outils, Internet,
 Exécution de code, Rythme, Heartbeat) et une page **Personas**. Les modifications s'accumulent
 dans une barre *Enregistrer / Annuler* (`Ctrl/⌘+S`) ; *↺ défaut* revient à la valeur d'origine.
 
 - **Outils** : cases à cocher (filtre, tout activer / désactiver) au lieu d'une liste à taper.
 - **Secrets** (token, clé Brave) : jamais renvoyés au navigateur, seulement « défini / vide » ;
   taper une valeur la remplace, *Effacer* la vide.
-- **Modèles** : suggestions tirées d'Ollama (`/api/tags`).
+- **Providers** : active les fournisseurs à utiliser (`providers` : Ollama, OpenAI, Anthropic,
+  Gemini) et configure-les — une carte par fournisseur activé : adresse d'Ollama, clés API.
+  *Modèles Ollama autorisés* (`ollama_allowed_models`) limite les modèles Ollama qu'on peut
+  choisir (onglet Modèles, `/rosalie model`) ; vide = tous ceux installés.
+- **Modèles** : un modèle par usage — principal (`chat_model`), « dois-je répondre ? »
+  (`decider_model`, vide = le principal) et embeddings (`embed_model`) — chacun chez le
+  fournisseur de ton choix, donc mélangeables (ex : principal OpenAI, embeddings Ollama). Une
+  valeur s'écrit `fournisseur:nom` (`ollama:qwen3:8b`, `openai:gpt-4o-mini`,
+  `anthropic:claude-sonnet-5-5`) ; sans préfixe, c'est un modèle Ollama. Suggestions tirées
+  d'Ollama (`/api/tags`). Anthropic ne propose pas d'embeddings. Un modèle ne peut venir que
+  d'un fournisseur activé : pour en désactiver un, change d'abord les modèles qui l'utilisent.
 
 Accès réservé au superadmin (chaque compte a sa page *Mon compte*) ; sécurité du site : voir [Site web](site-web.md).
 
@@ -55,7 +65,9 @@ marchent quand même. L'image Docker le construit elle-même.
 
 ```bash
 python bot.py settings                        # tout (* = modifié, ↻ = au redémarrage)
-python bot.py settings ollama                 # un groupe
+python bot.py settings providers              # un groupe (aussi : modèles, heartbeat…)
+python bot.py settings set providers ollama,openai
+python bot.py settings set chat_model openai:gpt-4o-mini   # embed_model reste sur Ollama
 python bot.py settings get num_ctx            # valeur, aide, défaut
 python bot.py settings set num_ctx 32768      # l'ancien nom marche aussi : OLLAMA_NUM_CTX
 python bot.py settings set channel_ids 123,456

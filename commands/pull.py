@@ -2,6 +2,7 @@ import asyncio
 import sys
 
 from libs.config import load_config
+from libs.config.schema import split_model
 from libs.llm.ollama import OllamaClient
 from libs.log import Log
 
@@ -10,7 +11,14 @@ def run():
     """python bot.py pull [model] — télécharge un modèle dans Ollama."""
     config, store = load_config()
     store.close()
-    model = sys.argv[2] if len(sys.argv) > 2 else config.ollama_model
+    if len(sys.argv) > 2:
+        model = sys.argv[2]
+    else:
+        provider, model = split_model(config.chat_model)
+        if provider != "ollama":
+            Log.info(f"Le modèle principal ({config.chat_model}) n'est pas un modèle Ollama : "
+                     "rien à télécharger (python bot.py pull <modèle> pour en choisir un).")
+            return
     asyncio.run(_pull(config.ollama_url, model))
 
 
