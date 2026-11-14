@@ -153,7 +153,8 @@ Points clés :
   le réglage `disabled_tools` (Réglages → Outils sur le site) pour en retirer.
 - **Le modèle local (Qwen3 8B abliterated) est imparfait en function calling** : il écrit parfois
   l'appel en JSON dans le texte (`_inline_tool_calls`), annonce une action sans la faire
-  (`NUDGE`), prétend avoir agi sans outil (`CLAIM_NUDGE` + avertissement), ou imite du texte
+  (`NUDGE`), prétend avoir agi sans outil (`CLAIM_NUDGE` + avertissement), invente une balise
+  seule (« [RECALL] ») au lieu de `[SILENCE]` (`is_silence` la traite comme un silence), ou imite du texte
   « [outil : …] » vu dans l'historique (→ `/rosalie reset`). L'exécution de code passe par des
   blocs de texte, pas par les outils, précisément pour ça.
 - **Images web** : DuckDuckGo Images bloque les clients automatisés (HTTP 202) — ne tente pas de

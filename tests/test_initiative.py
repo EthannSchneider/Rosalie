@@ -32,6 +32,15 @@ class SilenceTest(unittest.TestCase):
         self.assertFalse(is_silence("Le silence est d'or, tu sais."))
         self.assertFalse(is_silence("ok"))
 
+    def test_invented_lone_tag_is_silence(self):
+        # Le modèle répond parfois « [RECALL] » au lieu de [SILENCE] : rien ne doit partir.
+        for text in ("[RECALL]", " [NOTHING] ", "[NO_REPLY].", "[RIEN À DIRE]"):
+            self.assertTrue(is_silence(text), text)
+
+    def test_tag_with_real_text_is_not_silence(self):
+        for text in ("[RECALL] Tu avais ton examen aujourd'hui, non ?", "[lien]", "[1]", "[OK"):
+            self.assertFalse(is_silence(text), text)
+
 
 class QuietHoursTest(unittest.TestCase):
     def test_parse(self):

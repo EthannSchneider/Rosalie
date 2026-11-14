@@ -7,12 +7,16 @@ import re
 
 SILENCE = "[SILENCE]"
 _SILENCE = re.compile(r"^\W*\[?\s*silence\s*\]?\W*$", re.IGNORECASE)
+# Une réponse réduite à une seule balise en majuscules (« [RECALL] », « [NOTHING] »…) : le modèle
+# a inventé un marqueur au lieu de [SILENCE]. Ce n'est jamais un vrai message, on ne l'envoie pas.
+_LONE_TAG = re.compile(r"^\W*\[\s*[A-ZÀ-Ý][A-ZÀ-Ý_ -]{1,30}\]\W*$")
 
 
 def is_silence(reply: str) -> bool:
-    """Le modèle a choisi de ne rien dire (réponse vide ou [SILENCE])."""
+    """Le modèle a choisi de ne rien dire (réponse vide, [SILENCE] ou une balise inventée seule)."""
     text = (reply or "").strip()
-    return not text or text == "…" or bool(_SILENCE.match(text)) or text.upper().startswith(SILENCE)
+    return not text or text == "…" or bool(_SILENCE.match(text)) \
+        or text.upper().startswith(SILENCE) or bool(_LONE_TAG.match(text))
 
 
 def parse_hours(raw: str) -> tuple[int, int] | None:
