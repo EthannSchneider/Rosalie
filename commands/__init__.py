@@ -15,6 +15,7 @@ COMMANDS = {
     "web": "web",              # seulement le site web (réglages, comptes ; sans chat)
     "users": "users",          # comptes
     "roles": "roles",          # rôles et permissions
+    "supervise": "supervise",  # Rosalie sous supervision : relance, mise à jour, redémarrage
 }
 
 

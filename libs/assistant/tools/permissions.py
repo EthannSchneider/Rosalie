@@ -20,6 +20,9 @@ TOOL_PERMISSIONS: dict[str, str] = {
     # Photos
     "send_image": "act.images",
     "send_image_url": "act.images",
+    # Évolution du code (permission réservée au superadmin)
+    "request_code_change": "evolve",
+    "code_changes": "evolve",
     # Discord : lire
     "list_servers": "act.discord_read",
     "list_channels": "act.discord_read",

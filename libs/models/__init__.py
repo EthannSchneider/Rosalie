@@ -7,6 +7,7 @@ le cœur (owners Discord), les interfaces (Discord, web, terminal), les commande
   roles.py     Roles : les rôles et leurs permissions
   accounts.py  Accounts : comptes et sessions (accounts.roles : les rôles)
   chat.py      ChatMessage, ChatFile, ChatLog : historique du chat
+  evolution.py Evolution, Evolutions : opérations d'évolution du code (libs/evolve)
 
 Le schéma des bases est tenu par les migrations Alembic (migrations/), appliquées à
 l'ouverture (libs/db). Les personnalités personnalisées sont des fichiers (libs/config/store.py).
@@ -19,6 +20,7 @@ from libs.models.accounts import Accounts
 from libs.models.bases import ConfigBase, MainBase
 from libs.models.chat import ChatFile, ChatLog, ChatMessage
 from libs.models.config import Meta, Setting
+from libs.models.evolution import Evolution, Evolutions
 from libs.models.role import PERMISSIONS, SUPERADMIN, Role
 from libs.models.roles import Roles
 from libs.models.user import LoginSession, User
@@ -39,5 +41,6 @@ def main_database(storage: Path) -> Path:
     return path
 
 
-__all__ = ["Accounts", "ChatFile", "ChatLog", "ChatMessage", "ConfigBase", "LoginSession", "MAIN_DATABASE",
+__all__ = ["Accounts", "ChatFile", "ChatLog", "ChatMessage", "ConfigBase", "Evolution", "Evolutions",
+           "LoginSession", "MAIN_DATABASE",
            "MainBase", "Meta", "PERMISSIONS", "Role", "Roles", "SUPERADMIN", "Setting", "User", "main_database"]

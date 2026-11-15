@@ -55,7 +55,7 @@ class MigrationsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Accounts(Path(tmp) / "rosalie.sqlite3").close()
             db = sqlite3.connect(Path(tmp) / "rosalie.sqlite3")
-            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0005")
+            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0006")
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             self.assertIn("discord_id", columns)
             schema = db.execute("SELECT sql FROM sqlite_master WHERE name = 'users'").fetchone()[0]
@@ -510,6 +510,35 @@ class ChatTest(unittest.TestCase):
         self.rosalie.accounts.close()
         self.store.close()
         self.tmp.cleanup()
+
+    def test_evolution_api(self):
+        """Avec Rosalie lancée : suivi lisible par le superadmin, demande refusée tant que
+        l'évolution du code est désactivée, puis lancée dans la boucle de Rosalie."""
+        from libs.evolve import Evolver
+        self.rosalie.name = "Rosalie"
+        self.rosalie.interfaces = {}
+        self.rosalie.evolver = Evolver(self.rosalie, github=object(), remote="/nulle/part")
+        status, data = self.client.request("GET", "/api/v1/evolution")
+        self.assertEqual(status, 200)
+        self.assertEqual((data["operations"], data["supervised"], data["enabled"]), ([], False, False))
+        body = {"title": "Ajouter un salut", "reason": "feature", "objective": "Ajouter hello() dans app.py."}
+        status, error = self.client.request("POST", "/api/v1/evolution", body)
+        self.assertEqual(status, 400)
+        self.assertIn("désactivée", error["error"])
+        self.store.set("evolve", True)
+        self.rosalie.config = Config.load(self.store, self.rosalie.config.storage_dir)
+        status, data = self.client.request("POST", "/api/v1/evolution", body)
+        self.assertEqual(status, 201)
+        self.assertEqual((data["operations"][0]["author"], data["operations"][0]["title"]),
+                         ("boss", "Ajouter un salut"))
+        # le dépôt n'existe pas : l'opération échoue proprement, et le suivi le dit
+        self.wait_for(lambda: self.client.request("GET", "/api/v1/evolution")[1]["operations"][0]["status"] == "failed")
+        status, error = self.client.request("POST", "/api/v1/evolution/1/update", {})
+        self.assertEqual(status, 400)
+        self.assertIn("fusionnée", error["error"])
+        lea = Client(self.web.server.url)
+        lea.request("POST", "/api/v1/session/login", {"username": "lea", "password": "motdepasse"})
+        self.assertEqual(lea.request("GET", "/api/v1/evolution")[0], 403)
 
     def wait_for(self, predicate, timeout=5.0):
         import time

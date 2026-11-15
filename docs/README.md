@@ -8,5 +8,6 @@
 | [Réglages](reglages.md) | page Réglages, `python bot.py settings`, personnalités, migration du .env |
 | [Utilisation](utilisation.md) | quand elle répond, initiative, mémoire, commandes Discord, terminal |
 | [Ce qu'elle sait faire](fonctionnalites.md) | outils, internet, photos, exécution de code |
+| [Évolution du code](evolution.md) | elle modifie son propre code : modèle de code, pull request, jeton GitHub, mise à jour et redémarrage |
 | [Développement](developpement.md) | ajouter une interface ou un outil, tests |
 | [Fine-tuning](../finetune/README.md) | entraîner sa personnalité |

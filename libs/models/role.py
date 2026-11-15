@@ -46,7 +46,13 @@ PERMISSIONS: dict[str, tuple[str, str, str]] = {
     "settings": ("Réglages", "Modifier tous les réglages de Rosalie (token Discord, modèle, outils…).", ADMIN),
     "users": ("Utilisateurs", "Créer, modifier, supprimer les comptes et choisir leur rôle.", ADMIN),
     "roles": ("Rôles", "Créer et modifier les rôles et leurs permissions.", ADMIN),
+    "evolve": ("Évolution du code", "Lui faire modifier son propre code (pull request), fusionner, "
+               "mettre à jour et redémarrer. Réservée au superadmin.", ADMIN),
 }
+# Jamais données à un autre rôle que superadmin (ni par le site, ni en base, ni par les anciens
+# OWNER_IDS) : faire évoluer le code, c'est avoir tous les droits sur la machine.
+SUPERADMIN_ONLY = frozenset({"evolve"})
+GRANTABLE = tuple(name for name in PERMISSIONS if name not in SUPERADMIN_ONLY)
 ACT_PERMISSIONS = tuple(name for name, (_, _, group) in PERMISSIONS.items() if group == ACT)
 
 
@@ -57,7 +63,7 @@ def acts(permissions) -> bool:
 
 # Rôles créés au départ (migration main 0003). superadmin est verrouillé ; les autres se modifient.
 DEFAULT_ROLES: list[dict[str, Any]] = [
-    {"name": SUPERADMIN, "label": "Superadmin", "locked": True, "permissions": list(PERMISSIONS),
+    {"name": SUPERADMIN, "label": "Superadmin", "locked": True, "permissions": list(GRANTABLE),
      "description": "Tout, y compris les rôles et les utilisateurs. Il en reste toujours au moins un."},
     {"name": "admin", "label": "Admin", "locked": False, "permissions": ["chat", "web", *ACT_PERMISSIONS],
      "description": "Rosalie agit pour lui (outils, souvenirs, code), sur le chat web et sur Discord."},
@@ -84,4 +90,4 @@ class Role(MainBase):
         """Permissions effectives (superadmin : toutes, même celles ajoutées plus tard)."""
         if self.name == SUPERADMIN:
             return frozenset(PERMISSIONS)
-        return frozenset(p for p in self.permissions if p in PERMISSIONS)
+        return frozenset(p for p in self.permissions if p in GRANTABLE)

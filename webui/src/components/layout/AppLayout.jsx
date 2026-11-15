@@ -13,6 +13,7 @@ const ADMINISTRATION = [
   { to: "/settings", label: "Réglages", permission: ["settings", "personas"] },
   { to: "/users", label: "Utilisateurs", permission: "users" },
   { to: "/roles", label: "Rôles", permission: "roles" },
+  { to: "/evolution", label: "Évolution du code", permission: "evolve" },
 ];
 
 export default function AppLayout() {

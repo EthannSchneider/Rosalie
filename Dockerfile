@@ -29,7 +29,7 @@ WORKDIR /app
 COPY --from=dependencies /opt/venv /opt/venv
 # Navigateur virtuel (Chromium headless) + ses bibliothèques système, pour les sites en JavaScript
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libatomic1 \
+    && apt-get install -y --no-install-recommends libatomic1 git \
     && playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 COPY bot.py requirements.txt ./

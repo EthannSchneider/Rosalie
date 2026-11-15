@@ -1,7 +1,7 @@
 """Vues JSON : comptes, rôles, permissions et session."""
 from __future__ import annotations
 
-from libs.models.role import PERMISSIONS, Role
+from libs.models.role import GRANTABLE, PERMISSIONS, Role
 from libs.models.user import User
 
 
@@ -27,8 +27,10 @@ def role_json(role: Role, users: int = 0) -> dict:
 
 def roles_json(roles: list[Role], counts: dict[str, int]) -> dict:
     return {"roles": [role_json(role, counts.get(role.name, 0)) for role in roles],
+            # celles qu'on peut donner à un rôle (pas celles réservées au superadmin)
             "permissions": [{"name": name, "label": label, "description": description, "group": group}
-                            for name, (label, description, group) in PERMISSIONS.items()]}
+                            for name, (label, description, group) in PERMISSIONS.items()
+                            if name in GRANTABLE]}
 
 
 def session_json(*, name: str, setup: bool, user: User | None, chat: bool,

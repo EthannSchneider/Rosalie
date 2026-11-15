@@ -53,7 +53,7 @@ class Field:
 
 
 GROUPS = ("Discord", "Personnalité", "Providers", "Modèles", "Conversation", "Outils", "Internet",
-          "Exécution de code", "Rythme", "Heartbeat")
+          "Exécution de code", "Évolution du code", "Rythme", "Heartbeat")
 
 PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 PROVIDER_LABELS = {"ollama": "Ollama", "openai": "OpenAI", "anthropic": "Anthropic",
@@ -125,6 +125,12 @@ FIELDS: tuple[Field, ...] = (
           "Mémoire à long terme. En changer rend les souvenirs déjà enregistrés difficiles à "
           "retrouver. Anthropic ne propose pas d'embeddings.", env="EMBED_MODEL", restart=True,
           choices=("ollama", "openai", "gemini")),
+    Field("code_model", "model", "", "Modèles", "Modèle de code",
+          "Modèle spécialisé en programmation, à qui le modèle principal délègue les modifications "
+          "de son propre code (Évolution du code). Vide = le modèle principal."),
+    Field("code_num_ctx", "int", 65536, "Modèles", "Contexte du modèle de code (tokens)",
+          "Lire du code demande plus de mémoire de travail qu'une conversation.",
+          min=8192, max=2_000_000),
     Field("num_ctx", "int", 16384, "Modèles", "Contexte (tokens)",
           "Sa mémoire de travail. Trop petit => réponses coupées ou question perdue.",
           env="OLLAMA_NUM_CTX", min=2048, max=1_048_576),
@@ -181,6 +187,22 @@ FIELDS: tuple[Field, ...] = (
           "Secondes max par exécution.", env="CODE_TIMEOUT", min=1, max=3600),
     Field("code_max_runs", "int", 3, "Exécution de code", "Exécutions enchaînées max",
           "Ex : quand elle corrige une erreur.", env="CODE_MAX_RUNS", min=0, max=20),
+
+    # --- Évolution du code (libs/evolve) : réservée au superadmin (permission « evolve ») ----
+    Field("evolve", "bool", False, "Évolution du code", "Évolution du code",
+          "Elle peut modifier son propre code avec le modèle de code : clone du dépôt, branche, "
+          "vérifications, puis une pull request. Jamais de fusion automatique."),
+    Field("evolve_repo", "str", "EthannSchneider/Rosalie", "Évolution du code", "Dépôt GitHub",
+          "propriétaire/dépôt (ou son adresse https://github.com/…)."),
+    Field("evolve_base_branch", "str", "main", "Évolution du code", "Branche de référence",
+          "Les branches de travail en partent et les pull requests la visent."),
+    Field("github_token", "secret", "", "Évolution du code", "Jeton GitHub",
+          "Jeton d'accès limité à ce dépôt : Contents et Pull requests en lecture/écriture "
+          "(voir docs/evolution.md)."),
+    Field("evolve_max_steps", "int", 80, "Évolution du code", "Étapes max du modèle de code",
+          "Nombre max d'actions (lire, modifier, vérifier) par demande.", min=5, max=500),
+    Field("evolve_check_timeout", "int", 900, "Évolution du code", "Durée max des vérifications (s)",
+          "Par vérification (tests, construction du site).", min=30, max=7200),
 
     # --- Rythme -----------------------------------------------------------------------------
     Field("reply_delay", "float", 2.0, "Rythme", "Calme avant de répondre (s)",
@@ -304,6 +326,13 @@ def normalize(field: Field, value: Any) -> Any:
         value = value.lower()
         if not PERSONA_NAME.match(value):
             raise SettingError(f"{field.key} : nom de personnalité invalide")
+    elif field.key == "evolve_repo":
+        value = re.sub(r"^https?://github\.com/", "", value).removesuffix(".git").strip("/")
+        if not re.fullmatch(r"[\w.-]+/[\w.-]+", value):
+            raise SettingError(f"{field.key} : « propriétaire/dépôt » attendu")
+    elif field.key == "evolve_base_branch":
+        if not re.fullmatch(r"[\w./-]+", value) or value.startswith("-"):
+            raise SettingError(f"{field.key} : nom de branche invalide")
     elif kind == "str" and field.key.endswith("_url") and value:
         if not re.match(r"^https?://", value):
             raise SettingError(f"{field.key} : adresse http(s):// attendue")

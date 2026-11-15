@@ -33,6 +33,7 @@ from libs.core.interface import Interface
 from libs.core.text import split_message
 from libs.core.types import Conversation, Incoming, OutgoingFile, Person, Sent, split_key
 from libs.dataset.store import DatasetStore
+from libs.evolve import Evolver
 from libs.llm.ollama import OllamaClient, OllamaError
 from libs.llm.persona import Persona
 from libs.log import Log
@@ -84,6 +85,7 @@ class Rosalie:
         self.decider = ReplyDecider(lambda: self.config, self.llm, self.settings)
         self.browser = VirtualBrowser(web.USER_AGENT)   # ne démarre Chromium qu'au besoin
         self.heartbeat = Heartbeat(self)
+        self.evolver = Evolver(self)                    # évolution de son propre code (libs/evolve)
         self.interfaces: dict[str, Interface] = {}
 
         self.__locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -111,8 +113,8 @@ class Rosalie:
         if user is not None:
             return user.permissions
         if discord_id in self.discord_owners():   # transition : ancien OWNER_IDS
-            from libs.models.role import PERMISSIONS
-            return frozenset(PERMISSIONS)
+            from libs.models.role import GRANTABLE
+            return frozenset(GRANTABLE)   # tout, sauf ce qui est réservé au superadmin
         return frozenset({"web"}) if self.config.guest_web else frozenset()   # inconnu : invité
 
     def discord_owners(self) -> frozenset[int]:
@@ -166,10 +168,12 @@ class Rosalie:
         Log.info(f"{self.name} démarre : {', '.join(self.interfaces)} "
                  f"(modèle : {self.llm.model}, souvenirs : {self.long_term.count()})")
         heartbeat = asyncio.create_task(self.heartbeat.run())
+        evolve = asyncio.create_task(self.evolver.resume())
         try:
             await asyncio.gather(*(self.__run_interface(i) for i in list(self.interfaces.values())))
         finally:
             heartbeat.cancel()
+            evolve.cancel()
             await self.close()
 
     async def __run_interface(self, interface: Interface):
@@ -189,6 +193,7 @@ class Rosalie:
         for pending in self.__pending.values():
             if pending.task:
                 pending.task.cancel()
+        await self.evolver.close()
         await self.llm.close()
         await self.browser.close()
         self.long_term.close()

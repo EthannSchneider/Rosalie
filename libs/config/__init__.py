@@ -70,6 +70,8 @@ class Config:
     chat_model: str
     decider_model: str                 # vide dans les réglages = modèle principal (résolu ici)
     embed_model: str
+    code_model: str                    # vide dans les réglages = modèle principal (résolu ici)
+    code_num_ctx: int
     num_ctx: int
     temperature: float
 
@@ -97,6 +99,14 @@ class Config:
     code_timeout: int
     code_max_runs: int
 
+    # Évolution du code (libs/evolve)
+    evolve: bool
+    evolve_repo: str
+    evolve_base_branch: str
+    github_token: str
+    evolve_max_steps: int
+    evolve_check_timeout: int
+
     # Rythme : attendre que tu aies fini d'écrire avant de répondre
     reply_delay: float
     reply_max_wait: float
@@ -115,6 +125,12 @@ class Config:
 
     def __repr__(self) -> str:   # jamais de secret dans un log
         return f"Config(model={self.chat_model!r}, persona={self.persona!r}, ...)"
+
+    @property
+    def secrets(self) -> tuple[str, ...]:
+        """Toutes les valeurs secrètes définies (pour les masquer dans un texte qui sort)."""
+        return tuple(str(getattr(self, field.key)) for field in FIELDS
+                     if field.kind == "secret" and getattr(self, field.key))
 
     @property
     def api_keys(self) -> dict[str, str]:
@@ -143,6 +159,7 @@ class Config:
                 value = float(value)
             converted[field.key] = value
         converted["decider_model"] = converted["decider_model"] or converted["chat_model"]
+        converted["code_model"] = converted["code_model"] or converted["chat_model"]
         converted["names"] = tuple(name.lower() for name in converted["names"]) or ("rosalie",)
         return cls(**converted, storage_dir=storage or storage_dir())
 

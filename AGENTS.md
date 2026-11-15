@@ -42,6 +42,7 @@ python bot.py settings     # voir / modifier les réglages (storages/config.sqli
 python bot.py web          # seulement le site, sans chat (http://127.0.0.1:8765)
 python bot.py users        # comptes (add, passwd, role, discord, delete)
 python bot.py roles        # rôles et permissions (add, set, label, delete)
+python bot.py supervise    # Rosalie sous supervision (relance, mise à jour + redémarrage)
 npm --prefix webui run build   # construire le site (React, Vite) -> webui/dist
 alembic -c migrations/alembic.ini --name main revision --autogenerate -m "…"   # nouvelle migration
 python -m compileall -q libs interfaces commands
@@ -70,6 +71,9 @@ libs/assistant/
                               memory, internet, images, utilities (weather)
 libs/conversation/            memory (court terme), agenda, decider, prompt, initiative (silence)
 libs/memory/                  long_term (SQLite + embeddings), extractor (faits durables)
+libs/evolve/                  elle modifie son propre code : service (Evolver), workspace (clone
+                              isolé, git, vérifications), coder (modèle de code), github (PR)
+libs/supervisor.py            superviseur indépendant (stdlib seule) : relance, mise à jour, retour arrière
 libs/config/                  Config, schema.py (chaque réglage), store.py (réglages SQLite +
                               personnalités : personas/*.md intégrées, storages/personas/*.md perso)
 libs/db/                      Database (SQLite + SQLAlchemy), lance les migrations Alembic
@@ -117,6 +121,15 @@ Points clés :
   (`schema.split_model` ; sans préfixe = Ollama), donc mélangeables. `ConfigStore` refuse un
   modèle dont le fournisseur n'est pas activé ou, pour Ollama, hors des modèles autorisés.
 
+- **Évolution du code** (docs/evolution.md) : outil `request_code_change` → `Evolver.start` →
+  clone dans un dossier temporaire, branche `rosalie/evolve-…`, modèle de code (`code_model`) avec
+  des outils de fichiers enfermés dans le clone (pas de shell), vérifications, push, pull request.
+  Jamais de push sur la branche de référence ni de fusion automatique. Tout (lancer, fusionner,
+  mettre à jour) demande la permission `evolve`, RÉSERVÉE au superadmin (`SUPERADMIN_ONLY` dans
+  `libs/models/role.py` : aucun autre rôle ne peut l'avoir). Mise à jour + redémarrage : faits
+  par `libs/supervisor.py` (`python bot.py supervise`), qui ne doit importer que la bibliothèque
+  standard. Tout texte qui sort (PR, journal, messages) passe par `redact`.
+
 - **Réglages à chaud** : `Rosalie.config` est une propriété qui relit `ConfigStore` (cache
   mémoire, `PRAGMA data_version` vérifié au plus une fois par seconde) et applique au client
   Ollama. Ne garde jamais une copie de la config au démarrage : lis `rosalie.config.x` au moment
@@ -124,7 +137,7 @@ Points clés :
   navigateur ni les logs (`Config.__repr__`, `display()` masquent).
 - **Rôles et permissions** : un compte a un rôle (table `roles`), un rôle a des permissions
   (`PERMISSIONS` dans `libs/models/role.py` : chat, web ; act.memory, act.followups, act.images,
-  act.discord_read/write/manage/moderate, act.code ; personas, settings, users, roles). Le code
+  act.discord_read/write/manage/moderate, act.code ; personas, settings, users, roles ; evolve, réservée au superadmin). Le code
   teste TOUJOURS `user.has("…")` / `person.can("…")`, jamais un nom de rôle (sauf `superadmin`,
   verrouillé, qui a tout). Au moins une `act.*` = owner (`is_owner`) ; chaque outil demande la
   sienne (`libs/assistant/tools/permissions.py`, un test vérifie qu'aucun outil n'est oublié) ;

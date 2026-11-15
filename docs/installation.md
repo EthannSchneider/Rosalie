@@ -48,6 +48,7 @@ python bot.py settings set discord_token        # demandé sans écho
 | `python bot.py users …` | gérer les comptes du site ([détails](site-web.md)) |
 | `python bot.py pull [modèle]` | télécharge un modèle Ollama |
 | `python bot.py test` | lance les tests |
+| `python bot.py supervise` | lance Rosalie sous supervision : relancée si elle tombe, mise à jour et redémarrage depuis le site ([Évolution du code](evolution.md)) |
 
 Discord et le site tournent en même temps : c'est la même Rosalie (mêmes souvenirs, même agenda),
 joignable des deux côtés. Sans token Discord, seul le site démarre (Rosalie le signale) : règle le

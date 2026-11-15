@@ -13,6 +13,7 @@ invités*). Voir [Site web → Rôles](site-web.md#rôles-et-permissions).
 | Domaine | Outils |
 |---|---|
 | Initiative | `say` (parler tout de suite), `plan_followup`, `cancel_followup` (relances) |
+| Évolution du code | `request_code_change` (déléguer une modification de son code au modèle de code : pull request, avec confirmation), `code_changes` (suivi) — superadmin seulement, voir [Évolution du code](evolution.md) |
 | Mémoire | `remember`, `recall`, `forget` |
 | Internet | `web_search`, `fetch_url` |
 | Photos | `send_image`, `send_image_url` |

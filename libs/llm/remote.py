@@ -6,6 +6,47 @@ import aiohttp
 from libs.llm.ollama import OllamaError
 
 
+def _with_call_ids(messages: list[dict]) -> list[dict]:
+    """Le cœur garde l'historique au format Ollama : appels d'outils sans identifiant, arguments
+    en dict, résultats sans `tool_call_id`. OpenAI et Anthropic exigent qu'un résultat désigne
+    son appel : on numérote les appels et on rattache chaque résultat, dans l'ordre."""
+    result, waiting = [], []
+    for index, message in enumerate(messages):
+        message = dict(message)
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            calls = []
+            for position, call in enumerate(message["tool_calls"]):
+                call = {**call, "id": call.get("id") or f"call_{index}_{position}"}
+                calls.append(call)
+                waiting.append(call["id"])
+            message["tool_calls"] = calls
+        elif message.get("role") == "tool":
+            known = message.get("tool_call_id")
+            if known in waiting:
+                waiting.remove(known)
+            elif not known and waiting:
+                message["tool_call_id"] = waiting.pop(0)
+        result.append(message)
+    return result
+
+
+def _openai_message(message: dict) -> dict:
+    if message.get("role") == "tool":
+        return {"role": "tool", "tool_call_id": message.get("tool_call_id", ""),
+                "content": message.get("content") or ""}
+    if message.get("role") == "assistant" and message.get("tool_calls"):
+        calls = []
+        for call in message["tool_calls"]:
+            function = call.get("function", {})
+            arguments = function.get("arguments", {})
+            calls.append({"id": call["id"], "type": "function", "function": {
+                "name": function.get("name", ""),
+                "arguments": arguments if isinstance(arguments, str)
+                else json.dumps(arguments, ensure_ascii=False)}})
+        return {"role": "assistant", "content": message.get("content") or None, "tool_calls": calls}
+    return {"role": message.get("role"), "content": message.get("content") or ""}
+
+
 class RemoteClient:
     def __init__(self, timeout: int = 300):
         self.__timeout = aiohttp.ClientTimeout(total=timeout)
@@ -20,10 +61,12 @@ class RemoteClient:
                            format=None):
         """Même forme de réponse qu'Ollama : content, tool_calls, done_reason."""
         options = dict(options or {})
+        messages = _with_call_ids(messages)
         if "num_predict" in options:   # nom Ollama de la longueur max de réponse
             options["max_tokens"] = options.pop("num_predict")
         if provider == "openai":
-            payload = {"model": model, "messages": messages, "stream": False}
+            payload = {"model": model, "messages": [_openai_message(m) for m in messages],
+                       "stream": False}
             if tools:
                 payload["tools"] = tools
             payload.update({k: v for k, v in options.items()
@@ -89,7 +132,7 @@ class RemoteClient:
                                    "name": fn.get("name", ""),
                                    "input": json.loads(args) if isinstance(args, str) else args})
                 result.append({"role": "assistant", "content": blocks})
-            else:
+            elif content:   # un message vide est refusé par l'API
                 result.append({"role": "assistant" if role == "assistant" else "user", "content": content})
         return "\n".join(system), result
 
@@ -103,7 +146,8 @@ class RemoteClient:
                 system.append(text)
             elif role == "tool":
                 contents.append({"role": "user", "parts": [{"functionResponse": {
-                    "name": message.get("name", "tool"), "response": {"content": text}}}]})
+                    "name": message.get("tool_name") or message.get("name", "tool"),
+                    "response": {"content": text}}}]})
             elif role == "assistant" and message.get("tool_calls"):
                 parts = ([{"text": text}] if text else [])
                 for call in message["tool_calls"]:
