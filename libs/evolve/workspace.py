@@ -23,7 +23,7 @@ from pathlib import Path
 from libs.assistant.code_runner import safe_env
 
 GIT_NAME = "Rosalie"
-GIT_EMAIL = "rosalie@localhost"
+GIT_EMAIL = "rosalie@shkermit.ch"
 BRANCH_PREFIX = "rosalie/"
 # Ce que le modèle de code ne peut ni écrire ni supprimer (lire reste permis, sauf .git)
 PROTECTED = (".git", ".github", "storages")
