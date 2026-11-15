@@ -14,7 +14,9 @@ from pathlib import Path
 from helpers import FakeRosalie, make_config, make_ctx
 from libs.config.schema import SettingError
 from libs.evolve import Brief, Evolver, redact
+from libs.evolve.coder import Coder, compact
 from libs.evolve.workspace import Check, Workspace, WorkspaceError
+from libs.llm.ollama import CONTEXT_FULL, OllamaError
 from libs.models import Accounts
 from libs.models.evolution import WORK
 from libs.supervisor import Supervisor
@@ -294,6 +296,84 @@ class WorkspaceTest(unittest.TestCase):
         text = redact(f"clé {SECRET} et ghp_{'x' * 36}", [SECRET])
         self.assertNotIn(SECRET, text)
         self.assertNotIn("ghp_", text)
+
+
+class SmallContextModel(FakeCodeModel):
+    """Comme Ollama quand son contexte réel est trop petit : refuse tant que c'est trop gros."""
+
+    def __init__(self, replies, limit):
+        super().__init__(replies)
+        self.limit = limit
+        self.refused = 0
+
+    async def chat_message(self, messages, tools=None, model=None, **_):
+        if sum(len(m.get("content") or "") for m in messages) > self.limit:
+            self.refused += 1
+            raise OllamaError(CONTEXT_FULL)
+        return await super().chat_message(messages, tools=tools, model=model)
+
+
+class ContextTest(unittest.TestCase):
+    """Le travail continue même quand il ne tient plus dans le contexte du modèle de code."""
+
+    def run_coder(self, llm, **options):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Workspace(str(make_origin(Path(tmp))), "main", checks=OK_CHECK)
+            try:
+                workspace.prepare("rosalie/evolve-test")
+                (workspace.root / "gros.py").write_text("\n".join(f"ligne_{i} = {i}" for i in range(390)))
+                coder = Coder(llm, "ollama:code", workspace, **options)
+                return asyncio.run(coder.run("DEMANDE : ajoute un fichier"))
+            finally:
+                workspace.cleanup()
+
+    def test_compact_keeps_instructions_and_request(self):
+        messages = [{"role": "system", "content": "CONSIGNES"}, {"role": "user", "content": "DEMANDE"}]
+        for index in range(12):
+            messages.append(call("write_file", path=f"f{index}.py", content="x" * 900))
+            messages[-1]["role"] = "assistant"
+            messages.append({"role": "tool", "content": "r" * 900, "tool_name": "write_file"})
+        self.assertFalse(compact(messages, 10 ** 6, "DEMANDE", lambda: " JOURNAL"))
+        self.assertTrue(compact(messages, 3000, "DEMANDE", lambda: " JOURNAL"))
+        self.assertLessEqual(sum(len(json.dumps(m, ensure_ascii=False)) for m in messages), 3600)
+        self.assertEqual(messages[0]["content"], "CONSIGNES")
+        self.assertEqual(messages[1]["content"], "DEMANDE JOURNAL")
+        self.assertEqual(messages[2]["role"], "assistant")      # pas de résultat d'outil orphelin
+        self.assertEqual(messages[-1]["role"], "tool")          # le dernier échange est gardé
+        self.assertEqual(messages[-2]["tool_calls"][0]["function"]["arguments"]["path"], "f11.py")
+
+    def test_long_work_forgets_the_oldest_and_keeps_a_journal(self):
+        replies = [call("read_file", path="gros.py") for _ in range(30)]
+        replies += [call("write_file", path="nouveau.py", content="x = 1\n"),
+                    call("read_file", path="gros.py"), call("read_file", path="gros.py"),
+                    call("finish", title="feat: x", summary="fait")]
+        llm = FakeCodeModel(replies)
+        result = self.run_coder(llm, num_ctx=8192)
+        self.assertTrue(result.finished)
+        budget = 8192 * 0.75 * 3.2
+        for seen in llm.seen:
+            self.assertLess(sum(len(m.get("content") or "") for m in seen), budget)
+            self.assertIn("DEMANDE : ajoute un fichier", seen[1]["content"])
+            self.assertEqual(seen[0]["role"], "system")
+        last = llm.seen[-1][1]["content"]
+        self.assertIn("lu gros.py", last)
+        self.assertIn("écrit nouveau.py", last)
+        self.assertIn("Fichiers modifiés jusqu'ici : nouveau.py", last)
+
+    def test_real_context_smaller_than_setting(self):
+        replies = [call("read_file", path="gros.py") for _ in range(8)]
+        replies.append(call("finish", title="feat: x", summary="fait"))
+        llm = SmallContextModel(replies, limit=30_000)
+        result = self.run_coder(llm, num_ctx=65536)      # réglé bien au-dessus du contexte réel
+        self.assertTrue(result.finished)
+        self.assertGreater(llm.refused, 0)
+        self.assertIn("DEMANDE : ajoute un fichier", llm.seen[-1][1]["content"])
+
+    def test_context_too_small_even_for_the_request(self):
+        llm = SmallContextModel([], limit=100)
+        with self.assertRaises(OllamaError) as raised:
+            self.run_coder(llm, num_ctx=8192)
+        self.assertIn("pas assez de mémoire de travail", str(raised.exception))
 
 
 class PermissionTest(EvolveCase):

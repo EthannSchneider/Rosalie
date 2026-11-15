@@ -101,6 +101,15 @@ Au terminal (`python bot.py chat`), c'est ta machine : tu as tous les droits.
    si `webui/` a changé. Elles sont relancées une dernière fois sur l'état exact qui sera poussé.
 6. **Commit, push de la branche, pull request**.
 
+**Mémoire de travail.** Un travail long ne tient pas dans le contexte du modèle. Plutôt que
+d'échouer, le modèle de code oublie le plus ancien : d'abord les vieux résultats d'outils et les
+contenus déjà écrits, puis les plus vieux échanges, remplacés par un **journal** de ce qu'il a déjà
+fait (fichiers lus, modifiés, vérifications). Les consignes et la demande ne sont jamais retirées.
+Si le contexte réel est plus petit que `code_num_ctx` (limite du modèle, ou
+`OLLAMA_CONTEXT_LENGTH` du serveur) et qu'Ollama coupe la demande, il réduit sa cible et réessaie.
+Il n'échoue que si les consignes et la demande seules ne rentrent pas. Avec peu de contexte il
+relit davantage et avance moins par étape : augmente `evolve_max_steps` si besoin.
+
 La pull request explique **pourquoi** (raison, demandeur, objectif, contexte), **ce qui a été
 modifié** (résumé, fichiers), **les vérifications** (résultat de chacune) et **les risques ou
 limites**. Si une vérification échoue, c'est écrit en tête, la sortie est jointe, la PR est
