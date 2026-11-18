@@ -53,7 +53,7 @@ class Field:
 
 
 GROUPS = ("Discord", "Personnalité", "Providers", "Modèles", "Conversation", "Outils", "Internet",
-          "Exécution de code", "Évolution du code", "Rythme", "Heartbeat")
+          "Exécution de code", "Conteneurs", "Évolution du code", "Rythme", "Heartbeat")
 
 PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 PROVIDER_LABELS = {"ollama": "Ollama", "openai": "OpenAI", "anthropic": "Anthropic",
@@ -126,11 +126,8 @@ FIELDS: tuple[Field, ...] = (
           "retrouver. Anthropic ne propose pas d'embeddings.", env="EMBED_MODEL", restart=True,
           choices=("ollama", "openai", "gemini")),
     Field("code_model", "model", "", "Modèles", "Modèle de code",
-          "Modèle spécialisé en programmation, à qui le modèle principal délègue les modifications "
-          "de son propre code (Évolution du code). Vide = le modèle principal."),
-    Field("code_num_ctx", "int", 65536, "Modèles", "Contexte du modèle de code (tokens)",
-          "Lire du code demande plus de mémoire de travail qu'une conversation.",
-          min=8192, max=2_000_000),
+          "Modèle spécialisé en programmation, utilisé par opencode pour modifier son propre code "
+          "(Évolution du code). Vide = le modèle principal."),
     Field("num_ctx", "int", 16384, "Modèles", "Contexte (tokens)",
           "Sa mémoire de travail. Trop petit => réponses coupées ou question perdue.",
           env="OLLAMA_NUM_CTX", min=2048, max=1_048_576),
@@ -188,10 +185,30 @@ FIELDS: tuple[Field, ...] = (
     Field("code_max_runs", "int", 3, "Exécution de code", "Exécutions enchaînées max",
           "Ex : quand elle corrige une erreur.", env="CODE_MAX_RUNS", min=0, max=20),
 
+    # --- Conteneurs Docker (libs/containers) : son bac à sable, permission « act.containers » --
+    Field("containers", "bool", False, "Conteneurs", "Conteneurs Docker",
+          "Elle peut créer des conteneurs Docker (toujours préfixés « rosalie- ») et y lancer "
+          "n'importe quelle commande : son bac à sable, sans accès aux dossiers de la machine. "
+          "Sert aussi à l'évolution du code. Docker doit être installé."),
+    Field("containers_image", "str", "python:3.13-slim", "Conteneurs", "Image par défaut",
+          "Image utilisée quand elle n'en précise pas."),
+    Field("containers_max", "int", 5, "Conteneurs", "Conteneurs max",
+          "Nombre max de conteneurs à elle en même temps (hors évolution du code).", min=1, max=50),
+    Field("containers_memory", "str", "2g", "Conteneurs", "Mémoire max par conteneur",
+          "Ex : 512m, 2g."),
+    Field("containers_cpus", "float", 2.0, "Conteneurs", "Processeurs max par conteneur",
+          min=0.1, max=64),
+    Field("containers_timeout", "int", 120, "Conteneurs", "Durée max d'une commande (s)",
+          "Par commande lancée dans un conteneur (container_exec).", min=5, max=7200),
+    Field("containers_network", "bool", True, "Conteneurs", "Accès réseau",
+          "Les conteneurs ont accès à internet (installer des paquets…) et au réseau local. "
+          "Non = aucun réseau (et pas de moteur opencode)."),
+
     # --- Évolution du code (libs/evolve) : réservée au superadmin (permission « evolve ») ----
     Field("evolve", "bool", False, "Évolution du code", "Évolution du code",
-          "Elle peut modifier son propre code avec le modèle de code : clone du dépôt, branche, "
-          "vérifications, puis une pull request. Jamais de fusion automatique."),
+          "Elle peut modifier son propre code : clone du dépôt, branche, l'agent opencode dans un "
+          "conteneur Docker (conteneurs obligatoires), vérifications, puis une pull request. "
+          "Jamais de fusion automatique."),
     Field("evolve_repo", "str", "EthannSchneider/Rosalie", "Évolution du code", "Dépôt GitHub",
           "propriétaire/dépôt (ou son adresse https://github.com/…)."),
     Field("evolve_base_branch", "str", "main", "Évolution du code", "Branche de référence",
@@ -199,8 +216,11 @@ FIELDS: tuple[Field, ...] = (
     Field("github_token", "secret", "", "Évolution du code", "Jeton GitHub",
           "Jeton d'accès limité à ce dépôt : Contents et Pull requests en lecture/écriture "
           "(voir docs/evolution.md)."),
-    Field("evolve_max_steps", "int", 80, "Évolution du code", "Étapes max du modèle de code",
-          "Nombre max d'actions (lire, modifier, vérifier) par demande.", min=5, max=500),
+    Field("evolve_image", "str", "rosalie-evolve:latest", "Évolution du code", "Image du conteneur de travail",
+          "Image Docker où travaille le modèle de code. Celle par défaut est construite au premier "
+          "besoin (deploy/docker/evolve.Dockerfile : Python, Node, git, opencode)."),
+    Field("evolve_timeout", "int", 3600, "Évolution du code", "Durée max du travail (s)",
+          "Durée max du travail d'opencode par demande (comptée dans le conteneur).", min=60, max=86400),
     Field("evolve_check_timeout", "int", 900, "Évolution du code", "Durée max des vérifications (s)",
           "Par vérification (tests, construction du site).", min=30, max=7200),
 
@@ -330,6 +350,13 @@ def normalize(field: Field, value: Any) -> Any:
         value = re.sub(r"^https?://github\.com/", "", value).removesuffix(".git").strip("/")
         if not re.fullmatch(r"[\w.-]+/[\w.-]+", value):
             raise SettingError(f"{field.key} : « propriétaire/dépôt » attendu")
+    elif field.key in ("containers_image", "evolve_image"):
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._/:@-]{0,199}", value) or ".." in value:
+            raise SettingError(f"{field.key} : nom d'image Docker invalide")
+    elif field.key == "containers_memory":
+        value = value.lower()
+        if not re.fullmatch(r"[1-9]\d{0,5}[mg]", value):
+            raise SettingError(f"{field.key} : attendu un nombre suivi de m ou g (ex : 512m, 2g)")
     elif field.key == "evolve_base_branch":
         if not re.fullmatch(r"[\w./-]+", value) or value.startswith("-"):
             raise SettingError(f"{field.key} : nom de branche invalide")

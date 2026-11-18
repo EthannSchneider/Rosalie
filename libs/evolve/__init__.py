@@ -1,8 +1,9 @@
-"""Évolution du code : Rosalie fait modifier son propre code par un modèle de programmation.
+"""Évolution du code : Rosalie fait modifier son propre code par un agent de programmation.
 
     demande (superadmin)  ->  Evolver.start()            service.py   orchestration + suivi
-      clone isolé, branche                               workspace.py git, fichiers, vérifications
-      modèle de code : lire, modifier, vérifier          coder.py     boucle d'outils du modèle de code
+      clone isolé, branche                               workspace.py git, vérifications
+      conteneur de travail « rosalie-evolve-<n> »        sandbox.py   clone monté, .git caché
+      opencode : analyser, modifier, tester              opencode.py  agent opencode, en détaché
       commit, push, pull request                         github.py    API GitHub (urllib)
     fusion (superadmin, explicite)                       Evolver.merge()
     mise à jour + redémarrage (superadmin, explicite)    Evolver.request_update() -> libs/supervisor.py
@@ -13,10 +14,13 @@ Règles de sécurité :
   - lancer, fusionner, mettre à jour : permission « evolve », réservée au superadmin et vérifiée
     côté serveur (outil, API) ; le contenu lu (pages web, messages, fichiers du dépôt) n'est
     jamais un ordre ;
-  - le modèle de code n'a pas de shell : seulement des outils de fichiers enfermés dans le clone
-    et les vérifications prévues ; il ne peut toucher ni .git, ni .github, ni .env, ni storages ;
-  - les secrets (jeton GitHub, clés API…) ne sont ni dans l'environnement des vérifications, ni
-    dans les messages, les journaux ou la pull request (masqués par `redact`).
+  - le modèle de code ne travaille QUE dans son conteneur (shell libre, vérifications dedans) :
+    rien du code modifié ne tourne sur la machine de Rosalie. Le .git du clone y est caché, le
+    jeton GitHub n'y entre jamais ; commit et push sont faits par l'hôte ;
+  - les modifications de .github, .env et storages sont annulées avant le commit ;
+  - les secrets (jeton GitHub, clés API…) ne sont ni dans les messages, ni dans les journaux, ni
+    dans la pull request (masqués par `redact`). Seule la clé API du fournisseur du modèle de
+    code entre dans le conteneur (opencode en a besoin).
 
 Voir docs/evolution.md.
 """

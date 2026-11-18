@@ -1,6 +1,7 @@
 """Évolution du code : permissions, environnement de travail, flux complet jusqu'à la pull
-request (dépôt git local, faux GitHub, faux modèle de code), fusion, mise à jour, superviseur.
-Aucun réseau : le « dépôt distant » est un dépôt git local."""
+request (dépôt git local, faux GitHub, faux Docker où « opencode » est une fonction), reprise
+après un redémarrage, fusion, mise à jour, superviseur.
+Aucun réseau ni Docker : le « dépôt distant » est un dépôt git local."""
 import asyncio
 import json
 import os
@@ -14,9 +15,9 @@ from pathlib import Path
 from helpers import FakeRosalie, make_config, make_ctx
 from libs.config.schema import SettingError
 from libs.evolve import Brief, Evolver, redact
-from libs.evolve.coder import Coder, compact
+from libs.containers import ExecResult
+from libs.evolve.opencode import EXIT_FILE, PROMPT_FILE, RESULT_FILE
 from libs.evolve.workspace import Check, Workspace, WorkspaceError
-from libs.llm.ollama import CONTEXT_FULL, OllamaError
 from libs.models import Accounts
 from libs.models.evolution import WORK
 from libs.supervisor import Supervisor
@@ -47,20 +48,67 @@ def make_origin(root: Path) -> Path:
     return origin
 
 
-def call(name: str, **arguments) -> dict:
-    return {"content": "", "tool_calls": [{"function": {"name": name, "arguments": arguments}}]}
+class LocalDocker:
+    """Faux Docker : « le conteneur » est le dossier monté, les commandes y tournent en local, et
+    opencode est remplacé par `work(root)` (qui modifie le clone et renvoie son compte rendu).
+    hold=True : opencode ne termine pas tant qu'on n'appelle pas finish()."""
+    def __init__(self, work=None, code: str = "0", hold: bool = False):
+        self.work, self.code, self.hold = work, code, hold
+        self.specs, self.commands, self.removed, self.launched = [], [], [], []
+        self.files: dict[str, str] = {}
+        self.running: set[str] = set()
+        self.env: dict[str, str] = {}
+        self.root = None
 
+    async def problem(self):
+        return ""
 
-class FakeCodeModel:
-    def __init__(self, replies):
-        self.replies = list(replies)
-        self.seen = []
-        self.models = []
+    async def has_image(self, image):
+        return True
 
-    async def chat_message(self, messages, tools=None, model=None, **_):
-        self.seen.append([dict(m) for m in messages])
-        self.models.append(model)
-        return self.replies.pop(0)
+    async def list(self, kind=None):
+        return [{"name": name} for name in self.running]
+
+    async def managed(self, name):
+        return {"name": name, "status": "running", "image": "x", "kind": "evolve"} if name in self.running else None
+
+    async def mount_source(self, name, target):
+        return self.root if name in self.running else None
+
+    async def run(self, spec):
+        self.specs.append(spec)
+        self.root = spec.mounts[0][0]
+        self.running.add(spec.name)
+        return spec.name
+
+    async def remove(self, name):
+        self.removed.append(name)
+        existed = name in self.running
+        self.running.discard(name)
+        return existed
+
+    async def exec(self, name, command, *, timeout=120, workdir="", env=None, stdin=None, on_line=None):
+        self.commands.append(command)
+        done = subprocess.run(command, shell=isinstance(command, str), cwd=self.root, capture_output=True, text=True)
+        return ExecResult((done.stdout + done.stderr).strip(), done.returncode, 0.1)
+
+    async def exec_detached(self, name, command, *, workdir="", env=None):
+        self.launched.append(list(command))
+        self.env = dict(env or {})
+        if not self.hold:
+            self.finish()
+
+    def finish(self):
+        result = self.work(self.root) if self.work else ""
+        if result:
+            self.files[RESULT_FILE] = result
+        self.files[EXIT_FILE] = self.code
+
+    async def write_file(self, name, path, content):
+        self.files[path] = content
+
+    async def read_file(self, name, path, limit=20_000, tail=False):
+        return self.files.get(path, "")
 
 
 class FakeGitHub:
@@ -86,10 +134,15 @@ OK_CHECK = [Check("Vérification factice", [sys.executable, "-c", "print('tout v
 BAD_CHECK = [Check("Tests factices", [sys.executable, "-c", "import sys; print('boum'); sys.exit(1)"])]
 BRIEF = Brief("Ajouter un salut", "feature", "Ajouter une fonction hello() dans app.py.",
               context=f"Ne pas répéter ce jeton : {SECRET}", criteria="hello() renvoie « salut ».")
-WORKING = [call("read_file", path="app.py"),
-           call("write_file", path="app.py", content="VALUE = 1\n\n\ndef hello():\n    return 'salut'\n"),
-           call("run_checks"),
-           call("finish", title="feat: add hello", summary="- ajoute hello()", risks="aucun")]
+
+
+def add_hello(root: Path) -> str:
+    """Ce que fait « opencode » : la modification demandée, un chemin protégé au passage, et
+    son compte rendu."""
+    (root / "app.py").write_text("VALUE = 1\n\n\ndef hello():\n    return 'salut'\n")
+    (root / ".github").mkdir()
+    (root / ".github" / "ci.yml").write_text("interdit")
+    return "feat: add hello\n- ajoute hello()\n\n## Risques\naucun"
 
 
 class EvolveCase(unittest.TestCase):
@@ -97,7 +150,7 @@ class EvolveCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.origin = make_origin(self.root)
-        self.rosalie = FakeRosalie(make_config(evolve=True, github_token=SECRET,
+        self.rosalie = FakeRosalie(make_config(evolve=True, containers=True, github_token=SECRET,
                                                storage_dir=self.root / "storages"), self.root)
         self.rosalie.accounts = Accounts(self.root / "storages" / "rosalie.sqlite3")
         self.github = FakeGitHub()
@@ -106,10 +159,11 @@ class EvolveCase(unittest.TestCase):
         self.rosalie.accounts.close()
         self.tmp.cleanup()
 
-    def evolver(self, replies, checks=OK_CHECK) -> Evolver:
-        self.rosalie.llm = FakeCodeModel(replies)
+    def evolver(self, work=add_hello, checks=OK_CHECK, docker: LocalDocker | None = None) -> Evolver:
+        self.docker = docker or LocalDocker(work)
         self.rosalie.evolver = Evolver(self.rosalie, github=self.github, remote=str(self.origin),
-                                       checks=checks)
+                                       checks=checks, docker=self.docker)
+        self.rosalie.evolver.poll = 0.01
         return self.rosalie.evolver
 
     def run_operation(self, evolver: Evolver, brief: Brief = BRIEF):
@@ -124,7 +178,7 @@ class EvolveCase(unittest.TestCase):
 
 class PullRequestTest(EvolveCase):
     def test_change_goes_through_a_pull_request(self):
-        evolver = self.evolver(WORKING)
+        evolver = self.evolver()
         main_before = git(self.origin, "rev-parse", "main")
         operation = self.run_operation(evolver)
 
@@ -146,19 +200,29 @@ class PullRequestTest(EvolveCase):
             self.assertIn(part, pull["body"])
         self.assertNotIn(SECRET, pull["body"])
         self.assertNotIn(SECRET, json.dumps([e for e in operation.events]))
-        # le modèle de code (et non le principal) a reçu le dossier complet et AGENTS.md
-        self.assertEqual(set(self.rosalie.llm.models), {self.rosalie.config.code_model})
-        first = self.rosalie.llm.seen[0]
-        self.assertIn("Tout est en français", first[0]["content"])
-        for part in ("Objectif", "Contexte", "Critères de réussite", "hello()"):
-            self.assertIn(part, first[1]["content"])
+        self.assertEqual(pull["title"], "feat: add hello")
+        self.assertIn("avec opencode", pull["body"])
+        # opencode a tourné en détaché dans le conteneur, avec le modèle de code et le dossier complet
+        self.assertEqual(self.docker.launched[0][-2:], ["ollama/qwen3:8b", "3600"])
+        for part in ("Objectif", "Contexte", "Critères de réussite", "hello()", "AGENTS.md"):
+            self.assertIn(part, self.docker.files[PROMPT_FILE])
+        # le conteneur : nom préfixé, .git caché, jamais le jeton GitHub, supprimé à la fin
+        spec = self.docker.specs[0]
+        self.assertEqual(spec.name, "rosalie-evolve-1")
+        self.assertEqual(spec.tmpfs, ["/workspace/.git"])
+        self.assertNotIn(SECRET, str(spec) + str(self.docker.env) + str(self.docker.launched))
+        self.assertEqual((self.docker.removed[-1], self.docker.running), ("rosalie-evolve-1", set()))
+        self.assertIn(OK_CHECK[0].command, self.docker.commands)     # vérifications dans le conteneur
+        # le chemin protégé touché dans le conteneur a été rétabli, et c'est dit
+        self.assertNotIn(".github", git(self.origin, "ls-tree", "-r", "--name-only", operation.branch))
+        self.assertIn("chemins protégés", pull["body"])
         # suivi : analyse -> modification -> tests -> pull request
         steps = [e["status"] for e in operation.events]
         self.assertEqual([s for i, s in enumerate(steps) if i == 0 or s != steps[i - 1]],
                          ["analysis", "editing", "testing", "pr_open"])
 
     def test_failed_check_is_reported_and_blocks_merge(self):
-        evolver = self.evolver(WORKING, checks=BAD_CHECK)
+        evolver = self.evolver(checks=BAD_CHECK)
         operation = self.run_operation(evolver)
         self.assertEqual(operation.status, "pr_open")
         self.assertIs(operation.checks_ok, False)
@@ -171,14 +235,17 @@ class PullRequestTest(EvolveCase):
         self.assertEqual(self.github.merged, [])
 
     def test_nothing_is_pushed_when_the_model_fails(self):
+        def leak(root: Path) -> str:
+            (root / "app.py").write_text(f"TOKEN = '{SECRET}'\n")
+            return "feat: x\n- oups"
         cases = {
-            "aucun fichier": [call("read_file", path="app.py"), call("finish", title="x", summary="rien")],
-            "pas terminé": [{"content": "je ne sais pas"}] * 3,
-            "secret": [call("write_file", path="app.py", content=f"TOKEN = '{SECRET}'\n"),
-                       call("finish", title="x", summary="oups")],
+            "aucun fichier": LocalDocker(lambda root: "feat: x\n- rien"),
+            "pas terminé": LocalDocker(add_hello, code="1"),
+            "evolve_timeout": LocalDocker(add_hello, code="137"),
+            "secret": LocalDocker(leak),
         }
-        for expected, replies in cases.items():
-            operation = self.run_operation(self.evolver(replies))
+        for expected, docker in cases.items():
+            operation = self.run_operation(self.evolver(docker=docker))
             self.assertEqual(operation.status, "failed", expected)
             self.assertIn(expected, operation.error)
             self.assertNotIn(SECRET, operation.error)
@@ -186,7 +253,7 @@ class PullRequestTest(EvolveCase):
         self.assertEqual(git(self.origin, "branch", "--list", "rosalie/*"), "")
 
     def test_one_operation_at_a_time(self):
-        evolver = self.evolver([])
+        evolver = self.evolver()
         evolver.operations.create(title="a", reason="bug", brief={}, author="boss", conversation=None)
         with self.assertRaises(SettingError) as raised:
             evolver.operations.create(title="b", reason="bug", brief={}, author="boss", conversation=None)
@@ -194,9 +261,8 @@ class PullRequestTest(EvolveCase):
 
     def test_disabled_or_unconfigured(self):
         self.rosalie.config = make_config(evolve=False, storage_dir=self.root / "storages")
-        self.rosalie.llm = FakeCodeModel([])
         evolver = Evolver(self.rosalie, remote=str(self.origin))
-        self.assertEqual(len(evolver.problems()), 2)   # désactivée, pas de jeton
+        self.assertEqual(len(evolver.problems()), 3)   # désactivée, pas de jeton, pas de conteneurs
         with self.assertRaises(SettingError):
             asyncio.run(self.__start(evolver))
         with self.assertRaises(SettingError):
@@ -206,8 +272,61 @@ class PullRequestTest(EvolveCase):
     async def __start(evolver):
         return evolver.start(BRIEF, author="boss")
 
+    def test_work_survives_a_restart(self):
+        """opencode tourne dans son conteneur : Rosalie s'arrête, redémarre, et reprend le suivi."""
+        docker = LocalDocker(add_hello, hold=True)
+
+        async def first_run():
+            evolver = self.evolver(docker=docker)
+            operation = evolver.start(BRIEF, author="boss")
+            while not docker.launched:
+                await asyncio.sleep(0.01)
+            await evolver.close()                       # arrêt de Rosalie pendant le travail
+            return operation.id
+        operation_id = asyncio.run(first_run())
+        stopped = self.rosalie.evolver.operations.get(operation_id)
+        self.assertIn(stopped.status, WORK)             # pas en échec
+        self.assertEqual(docker.running, {"rosalie-evolve-1"})   # conteneur et clone gardés
+        self.assertTrue((docker.root / "app.py").exists())
+
+        async def second_run():
+            evolver = self.evolver(docker=docker)       # nouveau processus
+            resume = asyncio.create_task(evolver.resume(delay=0))
+            await asyncio.sleep(0.1)
+            self.assertIn(evolver.operations.get(operation_id).status, WORK)
+            docker.finish()                             # opencode termine après le redémarrage
+            while evolver.operations.get(operation_id).status in WORK:
+                await asyncio.sleep(0.02)
+            await resume
+            await evolver.close()
+            return evolver.operations.get(operation_id)
+        operation = asyncio.run(second_run())
+        self.assertEqual(operation.status, "pr_open", operation.error)
+        self.assertEqual(len(docker.launched), 1)       # opencode n'a pas été relancé
+        self.assertIn("def hello", git(self.origin, "show", f"{operation.branch}:app.py"))
+        self.assertEqual(docker.running, set())
+        self.assertFalse(docker.root.exists())          # clone supprimé à la fin
+        self.assertIn("Reprise", " ".join(e["message"] for e in operation.events))
+
+    def test_lost_container_fails_at_restart(self):
+        docker = LocalDocker(add_hello, hold=True)
+
+        async def scenario():
+            evolver = self.evolver(docker=docker)
+            operation = evolver.start(BRIEF, author="boss")
+            while not docker.launched:
+                await asyncio.sleep(0.01)
+            await evolver.close()
+            docker.running.clear()                      # la machine a redémarré : plus de conteneur
+            evolver = self.evolver(docker=docker)
+            await evolver.resume(delay=0)
+            return evolver.operations.get(operation.id)
+        operation = asyncio.run(scenario())
+        self.assertEqual(operation.status, "failed")
+        self.assertIn("redémarrage", operation.error)
+
     def test_merge_then_update_request(self):
-        evolver = self.evolver(WORKING)
+        evolver = self.evolver()
         operation = self.run_operation(evolver)
 
         async def scenario():
@@ -241,7 +360,7 @@ class PullRequestTest(EvolveCase):
         asyncio.run(scenario())
 
     def test_update_needs_a_merged_pull_request(self):
-        evolver = self.evolver(WORKING)
+        evolver = self.evolver()
         operation = self.run_operation(evolver)
         with self.assertRaises(SettingError) as raised:
             asyncio.run(evolver.request_update(operation.id, "boss"))
@@ -249,25 +368,21 @@ class PullRequestTest(EvolveCase):
 
 
 class WorkspaceTest(unittest.TestCase):
-    def test_files_stay_inside_the_clone(self):
+    def test_protected_paths_and_reference_branch(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Workspace(str(make_origin(Path(tmp))), "main")
             try:
                 workspace.prepare("rosalie/evolve-test")
-                (workspace.home / "dehors.txt").write_text("secret")
-                os.symlink(workspace.home / "dehors.txt", workspace.root / "lien.txt")
-                for path in ("../dehors.txt", "/etc/passwd", ".git/config", "lien.txt"):
-                    with self.assertRaises(WorkspaceError, msg=path):
-                        workspace.read_file(path)
-                for path in (".github/workflows/ci.yml", ".env", "storages/x.db", ".git/hooks/pre-commit",
-                             "../x.py"):
-                    with self.assertRaises(WorkspaceError, msg=path):
-                        workspace.write_file(path, "x")
-                self.assertIn("créé", workspace.write_file("libs/nouveau.py", "x = 1\n"))
-                self.assertIn("libs/nouveau.py", workspace.list_files())
-                self.assertIn("VALUE", workspace.search("VALUE"))
-                with self.assertRaises(WorkspaceError):
-                    workspace.replace_in_file("app.py", "absent", "x")
+                (workspace.root / "app.py").write_text("VALUE = 2\n")
+                (workspace.root / "AGENTS.md").unlink()
+                for path in (".github/workflows/ci.yml", ".env", "storages/x.db", "libs/.env.local"):
+                    (workspace.root / path).parent.mkdir(parents=True, exist_ok=True)
+                    (workspace.root / path).write_text("x")
+                self.assertEqual(len(workspace.discard_protected()), 4)
+                self.assertEqual(workspace.changed_files(), ["AGENTS.md", "app.py"])
+                self.assertFalse((workspace.root / ".github" / "workflows" / "ci.yml").exists())
+                with self.assertRaises(WorkspaceError):   # pas de conteneur : rien ne tourne sur l'hôte
+                    asyncio.run(workspace.run_checks(30))
                 with self.assertRaises(WorkspaceError):   # jamais la branche de référence
                     workspace.branch = "main"
                     workspace.push()
@@ -275,105 +390,31 @@ class WorkspaceTest(unittest.TestCase):
                 workspace.cleanup()
             self.assertFalse(workspace.home.exists())
 
-    def test_checks_run_without_secrets(self):
+    def test_checks_run_in_the_container(self):
         with tempfile.TemporaryDirectory() as tmp:
-            show = [sys.executable, "-c", "import os; print(os.environ.get('GITHUB_TOKEN'), os.environ['STORAGE_DIR'])"]
             workspace = Workspace(str(make_origin(Path(tmp))), "main",
-                                  checks=[Check("env", show), Check("site", ["npm", "x"], only_if="webui/"),
-                                          Check("absent", ["commande-qui-n-existe-pas"])])
-            os.environ["GITHUB_TOKEN"] = SECRET
+                                  checks=[Check("ok", ["sh", "-c", "pwd"]), Check("site", ["npm", "x"], only_if="webui/"),
+                                          Check("absent", ["sh", "-c", "exit 127"]), *BAD_CHECK])
+            docker = LocalDocker()
             try:
                 workspace.prepare("rosalie/evolve-test")
+                docker.root = workspace.root
+
+                class Box:
+                    async def exec(self, command, timeout=120):
+                        return await docker.exec("x", command)
+                workspace.sandbox = Box()
                 results = asyncio.run(workspace.run_checks(30))
             finally:
-                del os.environ["GITHUB_TOKEN"]
                 workspace.cleanup()
-            self.assertEqual([(r.name, r.ok) for r in results], [("env", True), ("absent", None)])
-            self.assertTrue(results[0].output.startswith("None "))
-            self.assertIn(str(workspace.home), results[0].output)   # données à part, pas celles de Rosalie
+            self.assertEqual([(r.name, r.ok) for r in results],
+                             [("ok", True), ("absent", None), ("Tests factices", False)])
+            self.assertIn("boum", results[2].output)
 
     def test_redact(self):
         text = redact(f"clé {SECRET} et ghp_{'x' * 36}", [SECRET])
         self.assertNotIn(SECRET, text)
         self.assertNotIn("ghp_", text)
-
-
-class SmallContextModel(FakeCodeModel):
-    """Comme Ollama quand son contexte réel est trop petit : refuse tant que c'est trop gros."""
-
-    def __init__(self, replies, limit):
-        super().__init__(replies)
-        self.limit = limit
-        self.refused = 0
-
-    async def chat_message(self, messages, tools=None, model=None, **_):
-        if sum(len(m.get("content") or "") for m in messages) > self.limit:
-            self.refused += 1
-            raise OllamaError(CONTEXT_FULL)
-        return await super().chat_message(messages, tools=tools, model=model)
-
-
-class ContextTest(unittest.TestCase):
-    """Le travail continue même quand il ne tient plus dans le contexte du modèle de code."""
-
-    def run_coder(self, llm, **options):
-        with tempfile.TemporaryDirectory() as tmp:
-            workspace = Workspace(str(make_origin(Path(tmp))), "main", checks=OK_CHECK)
-            try:
-                workspace.prepare("rosalie/evolve-test")
-                (workspace.root / "gros.py").write_text("\n".join(f"ligne_{i} = {i}" for i in range(390)))
-                coder = Coder(llm, "ollama:code", workspace, **options)
-                return asyncio.run(coder.run("DEMANDE : ajoute un fichier"))
-            finally:
-                workspace.cleanup()
-
-    def test_compact_keeps_instructions_and_request(self):
-        messages = [{"role": "system", "content": "CONSIGNES"}, {"role": "user", "content": "DEMANDE"}]
-        for index in range(12):
-            messages.append(call("write_file", path=f"f{index}.py", content="x" * 900))
-            messages[-1]["role"] = "assistant"
-            messages.append({"role": "tool", "content": "r" * 900, "tool_name": "write_file"})
-        self.assertFalse(compact(messages, 10 ** 6, "DEMANDE", lambda: " JOURNAL"))
-        self.assertTrue(compact(messages, 3000, "DEMANDE", lambda: " JOURNAL"))
-        self.assertLessEqual(sum(len(json.dumps(m, ensure_ascii=False)) for m in messages), 3600)
-        self.assertEqual(messages[0]["content"], "CONSIGNES")
-        self.assertEqual(messages[1]["content"], "DEMANDE JOURNAL")
-        self.assertEqual(messages[2]["role"], "assistant")      # pas de résultat d'outil orphelin
-        self.assertEqual(messages[-1]["role"], "tool")          # le dernier échange est gardé
-        self.assertEqual(messages[-2]["tool_calls"][0]["function"]["arguments"]["path"], "f11.py")
-
-    def test_long_work_forgets_the_oldest_and_keeps_a_journal(self):
-        replies = [call("read_file", path="gros.py") for _ in range(30)]
-        replies += [call("write_file", path="nouveau.py", content="x = 1\n"),
-                    call("read_file", path="gros.py"), call("read_file", path="gros.py"),
-                    call("finish", title="feat: x", summary="fait")]
-        llm = FakeCodeModel(replies)
-        result = self.run_coder(llm, num_ctx=8192)
-        self.assertTrue(result.finished)
-        budget = 8192 * 0.75 * 3.2
-        for seen in llm.seen:
-            self.assertLess(sum(len(m.get("content") or "") for m in seen), budget)
-            self.assertIn("DEMANDE : ajoute un fichier", seen[1]["content"])
-            self.assertEqual(seen[0]["role"], "system")
-        last = llm.seen[-1][1]["content"]
-        self.assertIn("lu gros.py", last)
-        self.assertIn("écrit nouveau.py", last)
-        self.assertIn("Fichiers modifiés jusqu'ici : nouveau.py", last)
-
-    def test_real_context_smaller_than_setting(self):
-        replies = [call("read_file", path="gros.py") for _ in range(8)]
-        replies.append(call("finish", title="feat: x", summary="fait"))
-        llm = SmallContextModel(replies, limit=30_000)
-        result = self.run_coder(llm, num_ctx=65536)      # réglé bien au-dessus du contexte réel
-        self.assertTrue(result.finished)
-        self.assertGreater(llm.refused, 0)
-        self.assertIn("DEMANDE : ajoute un fichier", llm.seen[-1][1]["content"])
-
-    def test_context_too_small_even_for_the_request(self):
-        llm = SmallContextModel([], limit=100)
-        with self.assertRaises(OllamaError) as raised:
-            self.run_coder(llm, num_ctx=8192)
-        self.assertIn("pas assez de mémoire de travail", str(raised.exception))
 
 
 class PermissionTest(EvolveCase):
@@ -392,10 +433,10 @@ class PermissionTest(EvolveCase):
         self.assertFalse(accounts.create("max", "motdepasse", "admin").has("evolve"))
 
     def test_tool_is_refused_without_the_permission(self):
-        from libs.assistant.tools import execute, schemas
+        from libs.assistant.tools import TOOLS, execute, schemas
         from libs.core.types import Person
         from libs.models.role import GRANTABLE
-        self.evolver([])
+        self.evolver()
         admin = Person("web", 2, "max", "Max", is_owner=True, permissions=frozenset(GRANTABLE))
         boss = Person("web", 1, "boss", "Boss", is_owner=True,
                       permissions=frozenset(GRANTABLE) | {"evolve"})
@@ -408,12 +449,8 @@ class PermissionTest(EvolveCase):
         result = asyncio.run(execute(ctx, "request_code_change", arguments))
         self.assertTrue(result.startswith("Erreur"), result)
         self.assertEqual(self.rosalie.evolver.operations.recent(), [])
-        # le superadmin doit encore confirmer : sans confirmation, rien ne part
-        ctx.person = boss
-        self.rosalie.interfaces["test"].confirm_answer = False
-        self.assertIn("annulée", asyncio.run(execute(ctx, "request_code_change", arguments)))
-        self.assertEqual(self.rosalie.evolver.operations.recent(), [])
-        self.assertIn("Ajouter un salut", self.rosalie.interfaces["test"].confirms[0])
+        # le superadmin lance sans confirmation : le garde-fou est la pull request, relue avant fusion
+        self.assertIsNone(TOOLS["request_code_change"].confirm)
 
 
 class ApiTest(unittest.TestCase):

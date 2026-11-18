@@ -158,9 +158,10 @@ class RolesTest(unittest.TestCase):
 
     def test_act_permissions_are_detailed(self):
         """L'ancien « act » est remplacé par act.memory, act.code… ; admin les a toutes."""
-        from libs.models.role import ACT_PERMISSIONS
+        from libs.models.role import DEFAULT_ACT
         admin = self.roles.get("admin")
-        self.assertEqual(set(admin.permissions), {"chat", "web", *ACT_PERMISSIONS})
+        self.assertEqual(set(admin.permissions), {"chat", "web", *DEFAULT_ACT})
+        self.assertNotIn("act.containers", admin.permissions)   # à donner explicitement
         self.roles.create("souvenirs", "Souvenirs", ["chat", "act.memory"])
         user = self.accounts.create("mia", "motdepasse", "souvenirs")
         self.assertTrue(user.is_owner)                      # au moins une act.* : owner
@@ -187,7 +188,7 @@ class ActMigrationTest(unittest.TestCase):
         from alembic import command
         from alembic.config import Config as AlembicConfig
         from libs.db.database import MIGRATIONS_DIR, make_engine
-        from libs.models.role import ACT_PERMISSIONS
+        from libs.models.role import DEFAULT_ACT
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rosalie.sqlite3"
             engine = make_engine(path)
@@ -203,7 +204,7 @@ class ActMigrationTest(unittest.TestCase):
             db.close()
             accounts = Accounts(path)                 # applique 0004
             # 0004 : act -> act.* ; 0005 : + web (ouverte à tous avant)
-            self.assertEqual(accounts.roles.get("modero").permissions, ["chat", "web", *ACT_PERMISSIONS, "users"])
+            self.assertEqual(accounts.roles.get("modero").permissions, ["chat", "web", *DEFAULT_ACT, "users"])
             self.assertEqual(accounts.roles.get("user").permissions, ["chat", "web"])
             accounts.close()
 
@@ -514,10 +515,12 @@ class ChatTest(unittest.TestCase):
     def test_evolution_api(self):
         """Avec Rosalie lancée : suivi lisible par le superadmin, demande refusée tant que
         l'évolution du code est désactivée, puis lancée dans la boucle de Rosalie."""
+        from libs.containers import Docker
         from libs.evolve import Evolver
         self.rosalie.name = "Rosalie"
         self.rosalie.interfaces = {}
-        self.rosalie.evolver = Evolver(self.rosalie, github=object(), remote="/nulle/part")
+        self.rosalie.evolver = Evolver(self.rosalie, github=object(), remote="/nulle/part",
+                                       docker=Docker(binary="docker-absent-pour-les-tests"))
         status, data = self.client.request("GET", "/api/v1/evolution")
         self.assertEqual(status, 200)
         self.assertEqual((data["operations"], data["supervised"], data["enabled"]), ([], False, False))
@@ -526,6 +529,7 @@ class ChatTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("désactivée", error["error"])
         self.store.set("evolve", True)
+        self.store.set("containers", True)   # opencode travaille dans un conteneur
         self.rosalie.config = Config.load(self.store, self.rosalie.config.storage_dir)
         status, data = self.client.request("POST", "/api/v1/evolution", body)
         self.assertEqual(status, 201)

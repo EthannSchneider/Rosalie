@@ -71,8 +71,11 @@ libs/assistant/
                               memory, internet, images, utilities (weather)
 libs/conversation/            memory (court terme), agenda, decider, prompt, initiative (silence)
 libs/memory/                  long_term (SQLite + embeddings), extractor (faits durables)
+libs/containers/              ses conteneurs Docker « rosalie-… » (docker.py : commande docker, étiquette,
+                              limites) ; outils container_* dans libs/assistant/tools/containers.py
 libs/evolve/                  elle modifie son propre code : service (Evolver), workspace (clone
-                              isolé, git, vérifications), coder (modèle de code), github (PR)
+                              isolé, git, vérifications), github (PR), sandbox (conteneur de
+                              travail), opencode (l'agent opencode, en détaché dans le conteneur)
 libs/supervisor.py            superviseur indépendant (stdlib seule) : relance, mise à jour, retour arrière
 libs/config/                  Config, schema.py (chaque réglage), store.py (réglages SQLite +
                               personnalités : personas/*.md intégrées, storages/personas/*.md perso)
@@ -105,7 +108,7 @@ Points clés :
 - **Outils** : `@tool(name, description, params, required=, confirm="Texte {param}", requires="discord")`.
   Un outil Discord vit dans `interfaces/discord/tools/` (`@discord_tool`) mais reste utilisable
   depuis n'importe quelle interface si Discord tourne. `ToolError` → message renvoyé au
-  modèle et signalé à l'utilisateur. Les actions destructrices ont `confirm=` (sauf supprimer/purger des messages, voulu sans confirmation).
+  modèle et signalé à l'utilisateur. Les actions destructrices ont `confirm=` (sauf supprimer/purger des messages, les conteneurs et `request_code_change`, voulus sans confirmation).
 - **Erreurs** : chaque outil en échec est collecté (`AgentResult.errors`) et signalé en pied de
   réponse (« ⚠️ Une action a échoué… »). Ne jamais masquer une erreur.
 - **Silence** : elle peut ne rien répondre, sauf quand on lui parle directement (DM, mention,
@@ -122,13 +125,25 @@ Points clés :
   modèle dont le fournisseur n'est pas activé ou, pour Ollama, hors des modèles autorisés.
 
 - **Évolution du code** (docs/evolution.md) : outil `request_code_change` → `Evolver.start` →
-  clone dans un dossier temporaire, branche `rosalie/evolve-…`, modèle de code (`code_model`) avec
-  des outils de fichiers enfermés dans le clone (pas de shell), vérifications, push, pull request.
+  clone dans un dossier temporaire, branche `rosalie/evolve-…`, conteneur `rosalie-evolve-<n>`
+  (clone monté, `.git` caché, jamais le jeton GitHub) où l'agent opencode fait tout le travail
+  avec `code_model` ; vérifications dans le conteneur ; commit, push et pull request par l'hôte.
+  Réglage `containers` obligatoire : rien du code modifié ne tourne sur l'hôte. opencode tourne en
+  détaché : un redémarrage de Rosalie ne l'interrompt pas, `Evolver.resume()` reprend le suivi.
   Jamais de push sur la branche de référence ni de fusion automatique. Tout (lancer, fusionner,
   mettre à jour) demande la permission `evolve`, RÉSERVÉE au superadmin (`SUPERADMIN_ONLY` dans
   `libs/models/role.py` : aucun autre rôle ne peut l'avoir). Mise à jour + redémarrage : faits
   par `libs/supervisor.py` (`python bot.py supervise`), qui ne doit importer que la bibliothèque
   standard. Tout texte qui sort (PR, journal, messages) passe par `redact`.
+
+- **Conteneurs** (docs/conteneurs.md) : réglage `containers` + permission `act.containers`
+  (`OPT_IN` dans `libs/models/role.py` : jamais donnée d'office à un rôle, sauf superadmin). Tout
+  passe par `libs/containers/docker.py`, qui construit lui-même les arguments de `docker run` :
+  nom préfixé `rosalie-`, étiquette `rosalie.managed=true` vérifiée avant chaque action, aucun
+  dossier de l'hôte à la demande du modèle (`Spec.mounts` est réservé au code), ports sur
+  127.0.0.1, limites, valeurs d'environnement jamais sur la ligne de commande. Les tests
+  remplacent la commande `docker` (`Docker(runner=…)`) : rien n'est testé contre le vrai Docker
+  automatiquement.
 
 - **Réglages à chaud** : `Rosalie.config` est une propriété qui relit `ConfigStore` (cache
   mémoire, `PRAGMA data_version` vérifié au plus une fois par seconde) et applique au client
@@ -137,7 +152,7 @@ Points clés :
   navigateur ni les logs (`Config.__repr__`, `display()` masquent).
 - **Rôles et permissions** : un compte a un rôle (table `roles`), un rôle a des permissions
   (`PERMISSIONS` dans `libs/models/role.py` : chat, web ; act.memory, act.followups, act.images,
-  act.discord_read/write/manage/moderate, act.code ; personas, settings, users, roles ; evolve, réservée au superadmin). Le code
+  act.discord_read/write/manage/moderate, act.code, act.containers ; personas, settings, users, roles ; evolve, réservée au superadmin). Le code
   teste TOUJOURS `user.has("…")` / `person.can("…")`, jamais un nom de rôle (sauf `superadmin`,
   verrouillé, qui a tout). Au moins une `act.*` = owner (`is_owner`) ; chaque outil demande la
   sienne (`libs/assistant/tools/permissions.py`, un test vérifie qu'aucun outil n'est oublié) ;

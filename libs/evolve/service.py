@@ -1,6 +1,7 @@
 """Orchestration d'une évolution du code, et son suivi.
 
-    start()            demande -> clone -> modèle de code -> vérifications -> push -> pull request
+    start()            demande -> clone -> opencode dans un conteneur -> vérifications -> push -> PR
+    resume()           au démarrage : reprend le suivi d'un opencode qui tourne encore
     refresh()          où en est la pull request sur GitHub (fusionnée ? fermée ?)
     merge()            fusion, sur action explicite d'un superadmin
     request_update()   demande de mise à jour + redémarrage au superviseur (libs/supervisor.py)
@@ -28,8 +29,10 @@ from typing import TYPE_CHECKING, Iterable
 from libs.config import ROOT_DIR
 from libs.config.schema import SettingError
 from libs.core.types import split_key
-from libs.evolve.coder import Coder, CoderResult
+from libs.containers import ContainerError, Limits
 from libs.evolve.github import GitHub, GitHubError
+from libs.evolve.opencode import CoderResult, OpenCode
+from libs.evolve.sandbox import KIND as SANDBOX_KIND, WORKDIR, Sandbox, container_name
 from libs.evolve.workspace import BRANCH_PREFIX, CheckResult, Workspace, WorkspaceError
 from libs.log import Log
 from libs.models.evolution import DEPLOY, REASONS, WORK, Evolution, Evolutions
@@ -90,14 +93,19 @@ def redact(text: str, secrets: Iterable[str]) -> str:
 
 
 class Evolver:
-    def __init__(self, rosalie: "Rosalie", *, github=None, remote: str | None = None, checks=None):
+    poll = 4.0      # secondes entre deux coups d'œil sur opencode (tests : plus court)
+
+    def __init__(self, rosalie: "Rosalie", *, github=None, remote: str | None = None, checks=None,
+                 docker=None):
         self.rosalie = rosalie
         self.operations = Evolutions(rosalie.accounts.db)
         self.state_dir = rosalie.config.storage_dir / STATE_DIR
         self.__github = github          # tests : faux GitHub
         self.__remote = remote          # tests : dépôt local
         self.__checks = checks          # tests : vérifications légères
+        self.__docker = docker          # tests : faux Docker
         self.__tasks: set[asyncio.Task] = set()
+        self.__detached: set[int] = set()   # opérations dont opencode tourne seul dans son conteneur
         self.__version: str | None = None
 
     # --- état ---------------------------------------------------------------------------------
@@ -110,6 +118,9 @@ class Evolver:
 
     def github(self) -> GitHub:
         return self.__github or GitHub(self.config.github_token)
+
+    def docker(self):
+        return self.__docker or getattr(self.rosalie, "docker", None)
 
     def version(self) -> str:
         """Commit de la version qui tourne (vide si l'installation n'est pas un dépôt git)."""
@@ -140,6 +151,14 @@ class Evolver:
             problems.append("l'évolution du code est désactivée (Réglages → Évolution du code)")
         if not config.github_token and self.__github is None:
             problems.append("le jeton GitHub n'est pas défini (Réglages → Évolution du code)")
+        if not config.containers:
+            problems.append("les conteneurs Docker sont désactivés : le modèle de code (opencode) "
+                            "travaille dans un conteneur (Réglages → Conteneurs)")
+        elif not config.containers_network:
+            problems.append("opencode a besoin du réseau dans son conteneur "
+                            "(Réglages → Conteneurs → Accès réseau)")
+        elif self.docker() is None:
+            problems.append("Docker n'est pas disponible ici")
         return problems
 
     # --- lancer une modification ----------------------------------------------------------
@@ -153,33 +172,59 @@ class Evolver:
         operation = self.operations.create(title=brief.title, reason=brief.reason, brief=asdict(brief),
                                            author=author, conversation=conversation)
         Log.command(f"Évolution #{operation.id} demandée par {author} : {brief.title}")
-        task = asyncio.get_running_loop().create_task(self.__work(operation.id, brief, author))
-        self.__tasks.add(task)
-        task.add_done_callback(self.__tasks.discard)
+        self.__spawn(self.__work(operation.id, brief, author))
         return operation
 
-    async def __work(self, operation_id: int, brief: Brief, author: str):
+    def __spawn(self, work):
+        task = asyncio.get_running_loop().create_task(work)
+        self.__tasks.add(task)
+        task.add_done_callback(self.__tasks.discard)
+
+    def __workspace(self, operation_id: int, home: Path | None = None) -> Workspace:
         config = self.config
         remote = self.__remote or f"https://github.com/{config.evolve_repo}.git"
-        workspace = Workspace(remote, config.evolve_base_branch, config.github_token, self.__checks)
+        workspace = Workspace(remote, config.evolve_base_branch, config.github_token, self.__checks, home)
+        # le modèle de code et les vérifications travaillent dans un conteneur
+        workspace.sandbox = Sandbox(
+            self.docker(), workspace.root, operation_id, image=config.evolve_image,
+            limits=Limits.of(config), network=config.containers_network,
+            on_line=lambda line: self.operations.update(
+                operation_id, detail=self.redact(f"prépare l'image : {line}")[:200]))
+        return workspace
+
+    async def __work(self, operation_id: int, brief: Brief, author: str, workspace: Workspace | None = None):
+        """workspace donné = reprise d'une opération dont opencode tourne encore dans son conteneur."""
+        resumed = workspace is not None
+        workspace = workspace or self.__workspace(operation_id)
+        self.__detached.discard(operation_id)
+        keep = False
         try:
-            operation = await self.__run(operation_id, brief, author, workspace)
+            operation = await self.__run(operation_id, brief, author, workspace, resumed)
             await self.__notify(operation, f"🔧 Pull request ouverte pour « {operation.title} » : "
                                            f"{operation.pr_url}\n"
                                 + ("Les vérifications passent. " if operation.checks_ok else
                                    "⚠️ Une vérification a échoué (détail dans la pull request). ")
                                 + "Elle attend une relecture et une fusion.")
         except asyncio.CancelledError:
-            self.operations.update(operation_id, "failed", "Interrompue (arrêt de Rosalie)",
-                                   error="interrompue par l'arrêt de Rosalie", detail="")
+            if operation_id in self.__detached:   # opencode continue dans son conteneur
+                keep = True
+                self.operations.update(operation_id, message="Arrêt de Rosalie : opencode continue dans "
+                                                             "son conteneur, reprise au redémarrage")
+            else:
+                self.operations.update(operation_id, "failed", "Interrompue (arrêt de Rosalie)",
+                                       error="interrompue par l'arrêt de Rosalie", detail="")
             raise
-        except (EvolveError, WorkspaceError, GitHubError, SettingError) as error:
+        except (EvolveError, WorkspaceError, ContainerError, GitHubError, SettingError) as error:
             await self.__fail(operation_id, str(error))
         except Exception as error:   # panne du modèle (OllamaError), imprévu…
             Log.error(self.redact(f"Évolution #{operation_id} : {error}\n{traceback.format_exc()}"))
             await self.__fail(operation_id, f"{type(error).__name__} : {error}")
         finally:
-            await asyncio.to_thread(workspace.cleanup)
+            self.__detached.discard(operation_id)
+            if not keep:
+                if workspace.sandbox is not None:
+                    await asyncio.shield(workspace.sandbox.close())
+                await asyncio.to_thread(workspace.cleanup)
 
     async def __fail(self, operation_id: int, reason: str):
         reason = self.redact(reason)[:2000]
@@ -188,24 +233,40 @@ class Evolver:
         if operation is not None:
             await self.__notify(operation, f"⚠️ La modification « {operation.title} » a échoué : {reason}")
 
-    async def __run(self, operation_id: int, brief: Brief, author: str, workspace: Workspace) -> Evolution:
+    async def __run(self, operation_id: int, brief: Brief, author: str, workspace: Workspace,
+                    resumed: bool = False) -> Evolution:
         config = self.config
         operations = self.operations
-        branch = f"{BRANCH_PREFIX}evolve-{operation_id}-{_slug(brief.title)}"
-        operations.update(operation_id, detail="clone le dépôt", branch=branch)
-        await asyncio.to_thread(workspace.prepare, branch)
-        operations.update(operation_id, message=f"Dépôt cloné, branche {branch}", base_sha=workspace.base_sha)
+        if resumed:
+            branch = workspace.branch
+            operations.update(operation_id, message="Reprise après le redémarrage de Rosalie")
+        else:
+            branch = f"{BRANCH_PREFIX}evolve-{operation_id}-{_slug(brief.title)}"
+            operations.update(operation_id, detail="clone le dépôt", branch=branch)
+            await asyncio.to_thread(workspace.prepare, branch)
+            operations.update(operation_id, message=f"Dépôt cloné, branche {branch}", base_sha=workspace.base_sha)
 
         async def activity(status: str, detail: str):
             operations.update(operation_id, status, detail=self.redact(detail)[:200])
 
-        coder = Coder(self.rosalie.llm, config.code_model, workspace, name=self.rosalie.name,
-                      max_steps=config.evolve_max_steps, num_ctx=config.code_num_ctx,
-                      check_timeout=config.evolve_check_timeout, on_activity=activity)
+        if not resumed:
+            operations.update(operation_id, detail="démarre le conteneur de travail")
+            await workspace.sandbox.start()
+            operations.update(operation_id, message=f"Conteneur de travail {workspace.sandbox.name} démarré")
+        coder = OpenCode(workspace.sandbox, config, name=self.rosalie.name, on_activity=activity,
+                         on_line=lambda line: operations.update(
+                             operation_id, detail=self.redact(line)[:200]), poll=self.poll)
+        self.__detached.add(operation_id)   # à partir d'ici, un arrêt de Rosalie ne l'interrompt pas
         result: CoderResult = await coder.run(brief.text(author))
+        self.__detached.discard(operation_id)
         if not result.finished:
-            raise EvolveError(f"le modèle de code ({config.code_model}) n'a pas terminé "
-                              f"(arrêt après {result.steps} étapes) : rien n'a été poussé")
+            raise EvolveError(f"le modèle de code ({config.code_model}) n'a pas terminé : "
+                              f"{result.summary or 'raison inconnue'} — rien n'a été poussé")
+        discarded = await asyncio.to_thread(workspace.discard_protected)
+        if discarded:
+            result.risks = (f"{result.risks}\n" if result.risks else "") + \
+                "Modifications annulées (chemins protégés) : " + ", ".join(discarded[:20]) + "."
+            operations.update(operation_id, message="Chemins protégés rétablis : " + ", ".join(discarded[:20]))
         changed = await asyncio.to_thread(workspace.changed_files)
         if not changed:
             raise EvolveError("le modèle de code n'a modifié aucun fichier"
@@ -323,11 +384,19 @@ class Evolver:
         return [operation for operation in finished if operation is not None]
 
     async def resume(self, delay: float = 15):
-        """Au démarrage : les modifications interrompues par l'arrêt sont marquées en échec, et
-        le résultat d'une mise à jour (réussie ou annulée) est annoncé à qui l'a demandée."""
+        """Au démarrage : le suivi des modifications dont opencode tourne encore dans son conteneur
+        reprend (les autres sont marquées en échec), et le résultat d'une mise à jour (réussie ou annulée) est annoncé à qui l'a demandée."""
+        resumed = set()
         for operation in self.operations.with_status(*WORK):
-            self.operations.update(operation.id, "failed", "Interrompue par un redémarrage de Rosalie",
-                                   error="interrompue par un redémarrage", detail="")
+            workspace = await self.__reattach(operation)
+            if workspace is None:
+                self.operations.update(operation.id, "failed", "Interrompue par un redémarrage de Rosalie",
+                                       error="interrompue par un redémarrage", detail="")
+                continue
+            resumed.add(workspace.sandbox.name)
+            Log.command(f"Évolution #{operation.id} : reprise, opencode tourne dans {workspace.sandbox.name}")
+            self.__spawn(self.__work(operation.id, Brief(**operation.brief), operation.author, workspace))
+        await self.__sweep(resumed)
         await asyncio.sleep(delay)   # le temps que les interfaces soient prêtes (et le superviseur)
         for operation in self.sync():
             if operation.status == "done":
@@ -336,6 +405,40 @@ class Evolver:
             else:
                 await self.__notify(operation, f"⚠️ La mise à jour « {operation.title} » a échoué : "
                                                f"{operation.error}")
+
+    async def __reattach(self, operation: Evolution) -> Workspace | None:
+        """Le travail d'une opération interrompue par un redémarrage, s'il continue : opencode
+        tourne encore dans son conteneur et le clone est toujours là. Sinon None."""
+        config, docker = self.config, self.docker()
+        if docker is None or not config.containers or not operation.branch:
+            return None
+        try:
+            name = container_name(operation.id)
+            state = await docker.managed(name)
+            root = await docker.mount_source(name, WORKDIR)
+            if state is None or state["status"] != "running" or root is None:
+                return None
+            workspace = self.__workspace(operation.id, root.parent)
+            await asyncio.to_thread(workspace.reattach, operation.branch, operation.base_sha)
+            return workspace
+        except (ContainerError, WorkspaceError, OSError) as error:
+            Log.warning(f"Évolution #{operation.id} : reprise impossible ({self.redact(str(error))})")
+            return None
+
+    async def __sweep(self, keep: set[str] = frozenset()):
+        """Supprime les conteneurs de travail laissés par un arrêt brutal (sauf ceux des
+        opérations reprises)."""
+        docker = self.docker()
+        if docker is None or not self.config.containers:
+            return
+        try:
+            if await docker.problem():
+                return
+            for container in await docker.list(SANDBOX_KIND):
+                if container["name"] not in keep:
+                    await docker.remove(container["name"])
+        except ContainerError as error:
+            Log.warning(f"Évolution : conteneurs de travail non nettoyés ({error})")
 
     async def close(self):
         for task in list(self.__tasks):
@@ -390,7 +493,8 @@ def pull_request_body(brief: Brief, author: str, result: CoderResult, changed: l
         lines.append(f"- Non vérifié sur la machine de Rosalie : {', '.join(check.name for check in skipped)}.")
     lines += ["- Rien n'est testé contre le vrai Discord ni contre les vrais fournisseurs de modèles.",
               "", "---",
-              f"Écrit par le modèle de code de Rosalie (`{model}`), à relire par un humain. "
+              f"Écrit par le modèle de code de Rosalie (`{model}`, avec opencode, dans un conteneur "
+              "Docker), à relire par un humain. "
               "Aucune fusion automatique."]
     return "\n".join(lines)
 

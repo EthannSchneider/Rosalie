@@ -29,7 +29,7 @@ gardé de côté jusqu'à ce que tu lies ton compte à Discord, voir [Site web](
 ## Page Réglages du site
 
 Une page par groupe (Discord, Personnalité, Providers, Modèles, Conversation, Outils, Internet,
-Exécution de code, Évolution du code, Rythme, Heartbeat) et une page **Personas**. Les modifications s'accumulent
+Exécution de code, Conteneurs, Évolution du code, Rythme, Heartbeat) et une page **Personas**. Les modifications s'accumulent
 dans une barre *Enregistrer / Annuler* (`Ctrl/⌘+S`) ; *↺ défaut* revient à la valeur d'origine.
 
 - **Outils** : cases à cocher (filtre, tout activer / désactiver) au lieu d'une liste à taper.

@@ -1,5 +1,5 @@
 """Évolution du code : le modèle principal délègue une modification de son propre code au modèle
-de code (libs/evolve). Permission « evolve » (superadmin seulement), et confirmation à chaque fois."""
+de code (libs/evolve). Permission « evolve » (superadmin seulement), sans confirmation : le garde-fou est la pull request, relue avant fusion."""
 from libs.assistant.tools.base import ToolContext, ToolError, tool
 from libs.config.schema import SettingError
 
@@ -26,8 +26,7 @@ def _evolver(ctx: ToolContext):
                              "fichiers ou fonctions concernés si tu les connais"),
        "constraints": ("string", "Ce qu'il ne faut pas faire ou pas casser"),
        "success_criteria": ("string", "Comment savoir que c'est réussi (comportement attendu, tests)")},
-      required=("title", "reason", "objective"),
-      confirm="Faire modifier mon code par le modèle de programmation : « {title} » ({reason}) ?")
+      required=("title", "reason", "objective"))
 async def request_code_change(ctx: ToolContext, title: str, reason: str, objective: str,
                               context: str = "", constraints: str = "", success_criteria: str = "") -> str:
     from libs.evolve import Brief

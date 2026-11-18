@@ -56,6 +56,14 @@ l'ordre : Brave / SearXNG si configurés, Openverse (sans clé), Wikimedia Commo
 `WEB_CONTACT` est rempli, et en dernier recours l'image principale (`og:image`) des pages
 trouvées par la recherche web. 8 Mo max, logos/icônes ignorés.
 
+## Conteneurs Docker
+
+Avec le réglage `containers` et la permission `act.containers`, elle a un bac à sable : des
+conteneurs Docker à elle (nom toujours préfixé `rosalie-`), où elle lance ce qu'elle veut sans
+confirmation — `container_run`, `container_exec`, `container_logs`, `container_list`,
+`container_remove`. Aucun dossier de la machine n'y est monté. Détails et garde-fous :
+[Conteneurs Docker](conteneurs.md).
+
 ## Exécuter du code
 
 Quand tu lui demandes quelque chose, elle peut écrire du code dans un bloc ` ```run-python `

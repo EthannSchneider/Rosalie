@@ -33,6 +33,7 @@ from libs.core.interface import Interface
 from libs.core.text import split_message
 from libs.core.types import Conversation, Incoming, OutgoingFile, Person, Sent, split_key
 from libs.dataset.store import DatasetStore
+from libs.containers import Docker
 from libs.evolve import Evolver
 from libs.llm.ollama import OllamaClient, OllamaError
 from libs.llm.persona import Persona
@@ -85,6 +86,7 @@ class Rosalie:
         self.decider = ReplyDecider(lambda: self.config, self.llm, self.settings)
         self.browser = VirtualBrowser(web.USER_AGENT)   # ne démarre Chromium qu'au besoin
         self.heartbeat = Heartbeat(self)
+        self.docker = Docker()                          # ses conteneurs « rosalie-… » (libs/containers)
         self.evolver = Evolver(self)                    # évolution de son propre code (libs/evolve)
         self.interfaces: dict[str, Interface] = {}
 

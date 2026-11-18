@@ -113,6 +113,13 @@ async def _progress(llm: OllamaClient, messages: list[dict], ctx: ToolContext, s
     return (message.get("content") or "").strip()
 
 
+def hidden_tools(config) -> frozenset[str]:
+    """Outils à ne pas proposer : désactivés dans les réglages, ou dont la fonction est coupée."""
+    from libs.assistant.tools.containers import CONTAINER_TOOLS
+    hidden = frozenset(getattr(config, "disabled_tools", ()))
+    return hidden if getattr(config, "containers", False) else hidden | CONTAINER_TOOLS
+
+
 async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
                     max_steps: int = 50, acted: bool = False, progress_every: int = 0,
                     on_progress: Callable[[str], Awaitable[None]] | None = None) -> AgentResult:
@@ -125,7 +132,7 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
     trace: list[dict] = []
     errors: list[str] = []
     tools = schemas(getattr(ctx.config, "web_access", True), guest=not ctx.is_owner,
-                    disabled=getattr(ctx.config, "disabled_tools", ()),
+                    disabled=hidden_tools(ctx.config),
                     interfaces=set(ctx.rosalie.interfaces), person=ctx.person)
     nudged = False
     num_ctx = getattr(ctx.config, "num_ctx", 8192)
