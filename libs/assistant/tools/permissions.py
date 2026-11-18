@@ -53,4 +53,19 @@ TOOL_PERMISSIONS: dict[str, str] = {
     "ban_member": "act.discord_moderate",
     "timeout_member": "act.discord_moderate",
     "set_nickname": "act.discord_moderate",
+
+    # Fichiers
+    "read_file": "act.files",
+    "write_file": "act.files",
+    "list_files": "act.files",
+    "delete_file": "act.files",
+    "move_file": "act.files",
+    "copy_file": "act.files",
+    # Git
+    "git_status": "act.git",
+    "git_diff": "act.git",
+    "git_log": "act.git",
+    "git_commit": "act.git",
+    "git_push": "act.git",
+    "git_pull": "act.git",
 }

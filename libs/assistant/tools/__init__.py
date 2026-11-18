@@ -7,6 +7,8 @@
   images.py      chercher et envoyer des photos
   utilities.py   météo
   system.py      run_command (commande shell, confirmée)
+  files.py       lire, écrire, lister, supprimer, déplacer, copier des fichiers
+  git_ops.py     git status, diff, log, commit, push, pull
 
 Les outils propres à une messagerie vivent dans interfaces/<nom>/tools/ (@tool(requires="<nom>")).
 Ajouter un outil = une fonction async décorée par @tool dans le bon fichier (ou un nouveau
@@ -15,7 +17,7 @@ fichier, à importer ci-dessous). Un outil avec `confirm=` demande une confirmat
 from libs.assistant.tools.base import (GUEST_TOOLS, TOOLS, WEB_TOOLS, Tool, ToolContext, ToolError,
                                        execute, schemas, tool)
 # Importer chaque catégorie enregistre ses outils dans TOOLS (dans cet ordre, montré au modèle)
-from libs.assistant.tools import initiative, memory, internet, images, utilities, system  # noqa: F401,E402
+from libs.assistant.tools import initiative, memory, internet, images, utilities, system, files, git_ops  # noqa: F401,E402
 
 __all__ = ["GUEST_TOOLS", "TOOLS", "WEB_TOOLS", "Tool", "ToolContext", "ToolError", "execute",
            "schemas", "tool"]
