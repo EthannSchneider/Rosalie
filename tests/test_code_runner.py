@@ -88,3 +88,50 @@ class AgentCodeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunCommandToolTest(unittest.TestCase):
+    """Outil run_command : SANS confirmation (voulu), act.code, réglage code_exec."""
+
+    def run_tool(self, arguments, **config):
+        from libs.assistant.tools import execute
+        from tests.helpers import FakeRosalie, make_config
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        rosalie = FakeRosalie(make_config(storage_dir=Path(tmp.name), **config), Path(tmp.name))
+        ctx = make_ctx(rosalie)
+        interface = ctx.interface()
+        interface.confirm_answer = False   # ne doit même pas être consultée
+        result = asyncio.run(execute(ctx, "run_command", arguments))
+        return result, interface.confirms, Path(tmp.name) / "workspace"
+
+    def test_runs_without_confirmation_in_workspace(self):
+        result, confirms, workspace = self.run_tool({"command": "echo salut && pwd && touch f"})
+        self.assertEqual(confirms, [])   # aucune confirmation demandée
+        self.assertIn("code de sortie 0", result)
+        self.assertIn("salut", result)
+        self.assertIn(str(workspace).removeprefix("/private"), result)
+        self.assertTrue((workspace / "f").exists())
+
+    def test_failure_and_timeout_are_reported(self):
+        result, _, _ = self.run_tool({"command": "exit 3"})
+        self.assertIn("code de sortie 3", result)
+        result, _, _ = self.run_tool({"command": "sleep 30", "timeout": 1})
+        self.assertIn("arrêté après", result)
+
+    def test_disabled_by_setting(self):
+        result, _, workspace = self.run_tool({"command": "touch f"}, code_exec=False)
+        self.assertTrue(result.startswith("Erreur"))
+        self.assertFalse(workspace.exists())
+
+    def test_needs_act_code(self):
+        from libs.assistant.tools import execute
+        from libs.core.types import Person
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        from tests.helpers import FakeRosalie, make_config
+        ctx = make_ctx(FakeRosalie(make_config(storage_dir=Path(tmp.name)), Path(tmp.name)))
+        ctx.person = Person("test", 7, "u7", "U7", True, permissions=("act.memory",))
+        result = asyncio.run(execute(ctx, "run_command", {"command": "touch f"}))
+        self.assertTrue(result.startswith("Erreur"))
+        self.assertFalse((Path(tmp.name) / "workspace").exists())

@@ -123,6 +123,9 @@ def _code_section(code_env: str) -> list[str]:
         "- Affiche ce qui compte avec print(). Pas d'input(), pas de boucle infinie, pas de "
         "serveur qui tourne en continu.",
         "- Pour simplement montrer du code sans l'exécuter, utilise un bloc ```python normal.",
+        "- Pour une simple commande (ls, df -h, git status…), tu peux aussi utiliser l'outil "
+        "run_command : elle tourne tout de suite, sans confirmation, donc jamais de commande "
+        "destructrice (rm, écrasement…) qu'il n'a pas clairement demandée.",
         "",
     ]
 

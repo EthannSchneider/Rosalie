@@ -20,6 +20,8 @@ TOOL_PERMISSIONS: dict[str, str] = {
     # Photos
     "send_image": "act.images",
     "send_image_url": "act.images",
+    # Système
+    "run_command": "act.code",
     # Discord : lire
     "list_servers": "act.discord_read",
     "list_channels": "act.discord_read",

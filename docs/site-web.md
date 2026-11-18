@@ -47,7 +47,7 @@ fixées par le code (c'est lui qui les vérifie) ; les rôles se gèrent sur la 
 | `act.discord_write` | Discord, écrire : envoyer (salon, DM), réagir, épingler, modifier, sondages, fils |
 | `act.discord_manage` | Discord, gérer le serveur : salons, statut, invitations, purger / supprimer des messages |
 | `act.discord_moderate` | Discord, modérer : rôles, expulser, bannir, exclure, surnoms |
-| `act.code` | exécuter du code (toujours avec confirmation) |
+| `act.code` | exécuter du code (avec confirmation) et des commandes `run_command` (**sans** confirmation) |
 | **Administration** | |
 | `personas` | créer, modifier et choisir les personnalités |
 | `settings` | tous les réglages de Rosalie |

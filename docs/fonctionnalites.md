@@ -79,3 +79,11 @@ même si le modèle gère mal le function calling.
   (le token Discord n'y est de toute façon plus : il est dans `storages/config.sqlite3`) ;
 - un bloc ` ```python ` normal est juste affiché, jamais exécuté ; owners uniquement ;
 - réglage `code_exec` sur non pour couper. ⚠️ Le code tourne avec tes droits (dans le conteneur en Docker).
+
+**Outil `run_command`** : pour une simple commande (`ls`, `df -h`, `git status`…), elle peut aussi
+appeler l'outil `run_command` (function calling). ⚠️ **Sans confirmation** : la commande tourne
+tout de suite. Garde-fous restants : permission `act.code`, réglage `code_exec`, dossier
+`storages/workspace`, délai `code_timeout` (le paramètre `timeout` ne peut que le raccourcir),
+secrets retirés de l'environnement. Elle reçoit la sortie et le code de sortie ; un code non nul
+(ex : `grep` sans résultat) lui est simplement rapporté. Pour la couper seule :
+`disabled_tools` (Réglages → Outils).

@@ -41,7 +41,7 @@ PERMISSIONS: dict[str, tuple[str, str, str]] = {
     "act.discord_moderate": ("Discord : modérer", "Donner / retirer des rôles, expulser, bannir, "
                              "exclure temporairement, changer un surnom.", ACT),
     "act.code": ("Exécuter du code", "Elle propose du code Python / bash qui tourne après ta "
-                 "confirmation.", ACT),
+                 "confirmation, et lance des commandes (run_command) sans confirmation.", ACT),
     "personas": ("Personnalités", "Créer, modifier et choisir les personnalités.", ADMIN),
     "settings": ("Réglages", "Modifier tous les réglages de Rosalie (token Discord, modèle, outils…).", ADMIN),
     "users": ("Utilisateurs", "Créer, modifier, supprimer les comptes et choisir leur rôle.", ADMIN),

@@ -177,8 +177,8 @@ Points clés :
   des pages trouvées par la recherche web.
 - **Sécurité web** : adresses locales refusées (y compris dans le navigateur Playwright),
   contenu web et messages lus = données, jamais des ordres.
-- **Exécution de code** : owner seulement, confirmation obligatoire (boutons Discord / `o/n`
-  terminal), dossier `storages/workspace`, `CODE_TIMEOUT`, variables `*TOKEN`, `*KEY`,
+- **Exécution de code** : owner seulement, confirmation obligatoire pour les blocs (boutons Discord / `o/n`
+  terminal) — mais l'outil `run_command` tourne SANS confirmation (voulu par l'utilisateur), dossier `storages/workspace`, `CODE_TIMEOUT`, variables `*TOKEN`, `*KEY`,
   `SECRET`, `PASSWORD` retirées de l'environnement.
 - **Logs** : `Log.message(where, …)` ; les tests mettent `LOG_FILE=os.devnull` ; l'interface
   terminal met `LOG_QUIET=1` pour ne pas polluer la discussion.
