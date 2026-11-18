@@ -85,5 +85,7 @@ appeler l'outil `run_command` (function calling). ⚠️ **Sans confirmation** :
 tout de suite. Garde-fous restants : permission `act.code`, réglage `code_exec`, dossier
 `storages/workspace`, délai `code_timeout` (le paramètre `timeout` ne peut que le raccourcir),
 secrets retirés de l'environnement. Elle reçoit la sortie et le code de sortie ; un code non nul
-(ex : `grep` sans résultat) lui est simplement rapporté. Pour la couper seule :
+(ex : `grep` sans résultat) lui est simplement rapporté. La sortie peut occuper ~20 % du contexte
+(`num_ctx`) ; au-delà elle est coupée au milieu et Rosalie est invitée à lire par morceaux
+(`sed -n`) plutôt qu'à relancer la même commande. Pour la couper seule :
 `disabled_tools` (Réglages → Outils).

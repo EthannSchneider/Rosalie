@@ -236,6 +236,15 @@ class AgentTest(unittest.TestCase):
         result = asyncio.run(run_agent(llm, [{"role": "user", "content": "météo ?"}], ctx))
         self.assertEqual(result.text, "Il fait 12°C.")
         self.assertIn("Note système", llm.seen[1][-1]["content"])
+        # annonce au milieu du message (vu en vrai : elle s'arrêtait là sans rien faire)
+        llm = FakeLLM([{"content": "J'ai lu tout le code et je vais maintenant créer l'outil file_ops."},
+                       {"content": "C'est prêt."}])
+        result = asyncio.run(run_agent(llm, [{"role": "user", "content": "implémente"}], ctx))
+        self.assertEqual(result.text, "C'est prêt.")
+        # une question n'est pas une promesse
+        llm = FakeLLM([{"content": "Tu veux que je vais créer ça ?"}])
+        result = asyncio.run(run_agent(llm, [{"role": "user", "content": "idées ?"}], ctx))
+        self.assertEqual(result.text, "Tu veux que je vais créer ça ?")
         llm = FakeLLM([{"content": "Je vais vérifier."}, {"content": "Je vais encore vérifier."}])
         result = asyncio.run(run_agent(llm, [{"role": "user", "content": "météo ?"}], ctx))
         self.assertEqual(result.text, "Je vais encore vérifier.")

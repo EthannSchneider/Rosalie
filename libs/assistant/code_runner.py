@@ -73,7 +73,8 @@ def _truncate(text: str, limit: int = OUTPUT_CHARS) -> str:
     return f"{text[:half]}\n… ({len(text) - limit} caractères coupés) …\n{text[-half:]}"
 
 
-async def run_code(block: CodeBlock, workdir: Path, timeout: float = 60) -> CodeResult:
+async def run_code(block: CodeBlock, workdir: Path, timeout: float = 60,
+                   output_chars: int = OUTPUT_CHARS) -> CodeResult:
     workdir.mkdir(parents=True, exist_ok=True)
     if block.language == "python":
         script = workdir / "_rosalie_run.py"
@@ -105,7 +106,7 @@ async def run_code(block: CodeBlock, workdir: Path, timeout: float = 60) -> Code
         await process.wait()
     finally:
         script.unlink(missing_ok=True)
-    text = _truncate(b"".join(chunks).decode("utf-8", errors="replace").strip())
+    text = _truncate(b"".join(chunks).decode("utf-8", errors="replace").strip(), output_chars)
     return CodeResult(text, process.returncode, time.monotonic() - start, timed_out)
 
 

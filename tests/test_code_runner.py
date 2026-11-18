@@ -135,3 +135,12 @@ class RunCommandToolTest(unittest.TestCase):
         result = asyncio.run(execute(ctx, "run_command", {"command": "touch f"}))
         self.assertTrue(result.startswith("Erreur"))
         self.assertFalse((Path(tmp.name) / "workspace").exists())
+
+    def test_long_output_fits_context_and_explains_how_to_continue(self):
+        # un fichier de ~7 700 caractères (base.py) était coupé à 3 000 : elle le relisait en boucle
+        result, _, _ = self.run_tool({"command": "python3 -c \"print('x' * 7700)\""})
+        self.assertIn("x" * 7700, result)
+        self.assertNotIn("coupée", result)
+        result, _, _ = self.run_tool({"command": "python3 -c \"print('y' * 50000)\""})
+        self.assertIn("caractères coupés", result)
+        self.assertIn("sed -n", result)

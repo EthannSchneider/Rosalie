@@ -28,7 +28,11 @@ _INLINE_CALL = re.compile(r"^\s*(\{.*\})\s*$", re.DOTALL)
 # « Je vais vérifier… », « Laisse-moi regarder… » : le modèle annonce une action puis s'arrête
 _ANNOUNCES_ACTION = re.compile(
     r"^\W*(je vais|je m'en occupe|laisse-moi|attends|je regarde|je vérifie|je cherche|"
-    r"un instant|une seconde|je lis)\b", re.IGNORECASE)
+    r"un instant|une seconde|je lis)\b"
+    # … ou au milieu : « J'ai tout lu et je vais maintenant créer l'outil. »
+    r"|\bje vais (maintenant |donc |tout de suite |m'y mettre et )?(cré|écri|ajout|modifi|lanc|"
+    r"exécut|lir|cherch|vérifi|regard|implément|fai|envoy|supprim|corrig|test|install|cod)",
+    re.IGNORECASE)
 NUDGE = ("(Note système : tu viens d'annoncer une action sans la faire. Fais-la maintenant "
          "avec les outils, puis donne ta réponse finale.)")
 
@@ -156,7 +160,8 @@ async def run_agent(llm: OllamaClient, messages: list[dict], ctx: ToolContext,
         if not calls:
             nudge = None
             if not nudged and ctx.is_owner:
-                if _ANNOUNCES_ACTION.search(content.strip()):
+                # une question (« Tu veux que je vais… ? ») n'est pas une promesse
+                if _ANNOUNCES_ACTION.search(content.strip()) and not content.strip().endswith("?"):
                     nudge = NUDGE
                 elif not actions and not acted and _CLAIMS_ACTION.search(content):
                     nudge = CLAIM_NUDGE

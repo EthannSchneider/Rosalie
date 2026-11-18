@@ -12,6 +12,8 @@ Garde UNIQUEMENT les informations utiles des semaines plus tard :
 faits sur {speaker} ou ses proches (noms, animaux, dates, lieux, travail), préférences, projets,
 décisions, demandes permanentes (« à partir de maintenant… »), moments émotionnels importants.
 Ignore : salutations, questions, actions ponctuelles sur Discord, banalités, ce qui est déjà connu.
+Ignore aussi tout ce que Rosalie dit qu'elle VA faire ou qu'elle A fait (outils, code, fichiers,
+commandes) : une annonce n'est pas un fait, et elle n'a peut-être rien fait.
 
 Déjà connu :
 {known}
