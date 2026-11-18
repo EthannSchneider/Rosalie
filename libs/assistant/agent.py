@@ -54,6 +54,8 @@ def _size(message: dict) -> int:
     size = len(message.get("content") or "")
     if message.get("tool_calls"):
         size += len(json.dumps(message["tool_calls"], ensure_ascii=False))
+    for image in message.get("images") or ():   # ~2500 tokens par image (VLM)
+        size += max(0, len(image) - 22) * 3
     return size
 
 

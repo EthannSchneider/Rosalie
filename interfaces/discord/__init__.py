@@ -11,11 +11,14 @@ import discord
 from interfaces.discord.confirm import ask_code_confirmation, ask_confirmation
 from interfaces.discord.utils import message_text, place_name
 from libs.core.interface import Interface
-from libs.core.types import Conversation, Incoming, OutgoingFile, Person, Sent, make_key
+from libs.core.types import (Conversation, Incoming, OutgoingFile, Person, Sent,
+                             to_data_uri)
 from libs.log import Log
 from libs.models.role import acts
 
 COGS = ("events", "admin", "training", "reload")
+MAX_INCOMING_IMAGES = 4        # par message : au-delà, le contexte du modèle serait saturé
+MAX_INCOMING_IMAGE_BYTES = 8_000_000   # Discord laisse passer 25 Mo, mais 8 Mo suffisent pour lire
 
 
 class DiscordInterface(Interface):
@@ -82,17 +85,39 @@ class DiscordInterface(Interface):
     async def incoming_from(self, message: discord.Message) -> Incoming:
         me = self.client.user
         replied = await self.__replied_author(message)
+        images = await self.__images_from(message)
         return Incoming(
             conversation=self.conversation_from(message.channel, message.author),
             author=self.person_from(message.author),
             text=message_text(message, me),
             message_id=message.id,
+            images=images,
             has_attachments=bool(message.attachments),
             mentioned=me in message.mentions,
             reply_to_bot=None if replied is None else replied == me.id,
             mentions_other=any(user.id != me.id for user in message.mentions),
             native=message,
         )
+
+    async def __images_from(self, message: discord.Message) -> tuple[str, ...]:
+        """Les images du message (data URIs) : elles seront montrées au modèle.
+        Les autres jointes restent dans le texte (« [pièce jointe : …] ») : fichiers non lus."""
+        uris = []
+        for attachment in message.attachments:
+            if attachment.is_spoiler or not str(attachment.content_type or "").startswith("image/"):
+                continue
+            if len(uris) >= MAX_INCOMING_IMAGES:
+                break
+            try:
+                data = await attachment.read()
+            except discord.DiscordException as error:
+                Log.warning(f"Image Discord non lue ({attachment.filename}) : {error}")
+                continue
+            if not data or len(data) > MAX_INCOMING_IMAGE_BYTES:
+                Log.warning(f"Image Discord ignorée ({attachment.filename}) : {len(data)} octets")
+                continue
+            uris.append(to_data_uri(data, str(attachment.content_type)))
+        return tuple(uris)
 
     async def __replied_author(self, message: discord.Message) -> int | None:
         reference = message.reference

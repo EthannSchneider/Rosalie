@@ -6,6 +6,15 @@ import aiohttp
 from libs.llm.ollama import OllamaError
 
 
+def _data_uri(image: str) -> tuple[str, str]:
+    """« data:image/png;base64,donnees » -> (« image/png », les données)."""
+    header, _, data = str(image).partition(",")
+    if not header.startswith("data:"):
+        return "image/jpeg", data
+    media = header[len("data:"):].split(";", 1)[0].strip().lower()
+    return media or "image/jpeg", data
+
+
 def _with_call_ids(messages: list[dict]) -> list[dict]:
     """Le cœur garde l'historique au format Ollama : appels d'outils sans identifiant, arguments
     en dict, résultats sans `tool_call_id`. OpenAI et Anthropic exigent qu'un résultat désigne
@@ -31,6 +40,11 @@ def _with_call_ids(messages: list[dict]) -> list[dict]:
 
 
 def _openai_message(message: dict) -> dict:
+    if message.get("images"):
+        content = [{"type": "text", "text": message.get("content") or ""}]
+        content += [{"type": "image_url", "image_url": {"url": image}}
+                    for image in message["images"]]
+        return {"role": message.get("role"), "content": content}
     if message.get("role") == "tool":
         return {"role": "tool", "tool_call_id": message.get("tool_call_id", ""),
                 "content": message.get("content") or ""}
@@ -118,6 +132,7 @@ class RemoteClient:
         system, result = [], []
         for message in messages:
             role, content = message.get("role"), message.get("content") or ""
+            images = message.get("images") or ()
             if role == "system":
                 system.append(content)
             elif role == "tool":
@@ -132,8 +147,16 @@ class RemoteClient:
                                    "name": fn.get("name", ""),
                                    "input": json.loads(args) if isinstance(args, str) else args})
                 result.append({"role": "assistant", "content": blocks})
-            elif content:   # un message vide est refusé par l'API
-                result.append({"role": "assistant" if role == "assistant" else "user", "content": content})
+            elif content or (role == "user" and images):   # un message vide est refusé par l'API
+                if role == "user" and images:   # images de la personne -> blocs media
+                    blocks = [{"type": "text", "text": content}] if content else []
+                    blocks += [{"type": "image", "source": {"type": "base64", "media_type":
+                                _data_uri(image)[0], "data": _data_uri(image)[1]}}
+                               for image in images]
+                    result.append({"role": "user", "content": blocks})
+                else:
+                    result.append({"role": "assistant" if role == "assistant" else "user",
+                                   "content": content})
         return "\n".join(system), result
 
     @staticmethod
@@ -157,8 +180,11 @@ class RemoteClient:
                                   "args": json.loads(args) if isinstance(args, str) else args}})
                 contents.append({"role": "model", "parts": parts})
             else:
-                contents.append({"role": "model" if role == "assistant" else "user",
-                                 "parts": [{"text": text}]})
+                parts = ([{"text": text}] if text else [])
+                parts += [{"inlineData": {"mimeType": _data_uri(image)[0],
+                            "data": _data_uri(image)[1]}} for image in message.get("images") or ()]
+                if parts:
+                    contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
         payload = {"contents": contents}
         if system:
             payload["systemInstruction"] = {"parts": [{"text": "\n".join(system)}]}

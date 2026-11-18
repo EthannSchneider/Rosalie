@@ -253,7 +253,8 @@ class Rosalie:
         conversation, author = incoming.conversation, incoming.author
         try:
             reply = await self.speak(conversation, author, reply_to=incoming.message_id,
-                                     query=incoming.text, must_reply=direct)
+                                     query=incoming.text, images=incoming.images,
+                                     must_reply=direct)
         except OllamaError as error:
             Log.error(f"Erreur du fournisseur de modèle : {error}")
             text = ("Je n'arrive pas à joindre mon fournisseur de modèle. Vérifie ses réglages."
@@ -277,16 +278,18 @@ class Rosalie:
 
     # --- parler -------------------------------------------------------------------------------
     async def speak(self, conversation: Conversation, person: Person, *, reply_to: Any = None,
-                    note: str | None = None, query: str | None = None, spontaneous: bool = False,
+                    note: str | None = None, query: str | None = None,
+                    images: tuple[str, ...] = (), spontaneous: bool = False,
                     must_reply: bool = False) -> str | None:
         """Fait réfléchir/agir Rosalie dans cette conversation et envoie sa réponse.
         Retourne le texte envoyé, ou None si elle a choisi le silence.
         `note` : consigne système ajoutée en fin de conversation (relance, réflexion).
+        `images` : images du message de la personne (data URIs), montrées au modèle.
         Sans `reply_to` (initiative), pas de « écrit… » si elle finit par se taire."""
         async with self.__locks[conversation.key]:
             reply, trace, errors = await self.__think(conversation, person, query, note,
                                                       typing=reply_to is not None,
-                                                      must_reply=must_reply)
+                                                      must_reply=must_reply, images=images)
             if errors:   # une erreur est toujours dite, même si elle comptait se taire
                 reply = "\n\n".join(filter(None, [reply, errors_footer(errors)]))
 
@@ -310,14 +313,16 @@ class Rosalie:
             return reply
 
     async def __think(self, conversation: Conversation, person: Person, query: str | None,
-                      note: str | None, typing: bool, must_reply: bool = False
+                      note: str | None, typing: bool, must_reply: bool = False,
+                      images: tuple[str, ...] = ()
                       ) -> tuple[str | None, list[dict], list[str]]:
         """Réflexion + outils ; si elle écrit un bloc run-python/run-bash : confirmation par
         l'owner, exécution, et elle reprend avec la sortie (jusqu'à CODE_MAX_RUNS fois)."""
         config = self.config
         interface = self.interface_of(conversation)
         messages = build_messages(await self.system_prompt(conversation, person, query),
-                                  self.memory.get(conversation.key), tools=True)
+                                  self.memory.get(conversation.key), tools=True,
+                                  images=images)
         if note:
             with_note(messages, note)
         ctx = ToolContext(rosalie=self, conversation=conversation, person=person)

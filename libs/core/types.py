@@ -4,8 +4,16 @@ Chaque interface (Discord, terminal…) traduit ses objets natifs en ces types.
 Une clé « interface:id » identifie une personne ou une conversation partout
 (mémoire, agenda, relances).
 """
+import base64
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def to_data_uri(data: bytes, content_type: str = "image/png") -> str:
+    """Bytes d'une image -> data URI base64 (la forme interne : les fournisseurs distants et
+    Ollama (qui veut du base64 brut) en tirent le format qu'ils attendent, voir libs/llm/)."""
+    mime = (content_type or "").split(";")[0].strip().lower() or "image/png"
+    return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
 
 
 def make_key(interface: str, native_id) -> str:
@@ -62,6 +70,9 @@ class Incoming:
     author: Person
     text: str
     message_id: Any = None
+    # Images du message, en data URIs base64 (elles sont montrées au modèle ; la mémoire
+    # n'en garde que le nom de fichier)
+    images: tuple[str, ...] = field(default_factory=tuple)
     has_attachments: bool = False
     mentioned: bool = False            # @mention de Rosalie
     reply_to_bot: bool | None = None   # réponse à un message : à elle (True), à quelqu'un d'autre (False)
