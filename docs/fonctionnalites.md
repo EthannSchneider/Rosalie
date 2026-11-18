@@ -44,6 +44,11 @@ et `fetch_url` pour lire une page. Les pages construites en JavaScript sont ouve
 rapide d'abord, le navigateur seulement si la page est vide ou bloquée
 (`WEB_BROWSER=auto|always|never`).
 
+DuckDuckGo refuse parfois les recherches automatisées (HTTP 202), surtout quand elles
+s'enchaînent : Rosalie le dit, n'insiste pas (plus de tentative pendant 10 minutes) et répond
+avec ce qu'elle sait. Pour une recherche fiable, règle `web_search_provider` sur `searxng`
+(auto-hébergé, `searxng_url`) ou `brave` (clé API gratuite, `brave_api_key`).
+
 Elle cherche d'elle-même pour l'actualité, les prix… et cite ses sources. Les adresses du
 réseau local (localhost, 192.168.x…) sont refusées, y compris dans le navigateur, et le contenu
 web est traité comme des données, jamais comme des ordres. `WEB_ACCESS=false` pour tout couper.

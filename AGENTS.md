@@ -192,6 +192,12 @@ Points clés :
   seule (« [RECALL] ») au lieu de `[SILENCE]` (`is_silence` la traite comme un silence), ou imite du texte
   « [outil : …] » vu dans l'historique (→ `/rosalie reset`). L'exécution de code passe par des
   blocs de texte, pas par les outils, précisément pour ça.
+- **Recherche web** : DuckDuckGo refuse parfois les clients automatisés (HTTP 202, 403, 429),
+  surtout après plusieurs recherches d'affilée. On ne contourne pas : `libs/web.py` n'essaie plus
+  pendant 10 min (`DDG_PAUSE`) et le message dit au modèle de ne pas réessayer. Recherche fiable =
+  SearXNG ou Brave (`web_search_provider`).
+- **Pied d'erreurs** (« ⚠️ Une action a échoué ») : envoyé, jamais gardé en mémoire courte — relu
+  dans l'historique, le modèle le recopiait dans ses réponses suivantes.
 - **Images web** : DuckDuckGo Images bloque les clients automatisés (HTTP 202) — ne tente pas de
   contourner leur protection anti-bot. Bing renvoyait des résultats hors sujet (retiré).
   Wikimedia exige un contact dans le User-Agent (403 sinon) → seulement si `WEB_CONTACT` est

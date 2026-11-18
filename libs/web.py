@@ -11,6 +11,7 @@ import ipaddress
 import json
 import re
 import socket
+import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
@@ -45,10 +46,33 @@ def _clean(fragment: str) -> str:
 
 # --------------------------------------------------------------------------- recherche
 
+# DuckDuckGo répond 202 (ou 403, 429) quand il refuse les clients automatisés. On ne contourne pas
+# sa protection : on arrête d'insister pendant un moment (insister prolonge le blocage), et le
+# message dit au modèle de ne pas réessayer.
+DDG_REFUSED = (202, 403, 429)
+DDG_PAUSE = 600             # secondes sans nouvelle tentative après un refus
+_ddg_blocked_until = 0.0
+
+
+def _ddg_refusal() -> WebError:
+    return WebError("DuckDuckGo refuse les recherches automatisées pour le moment (ce n'est pas la "
+                    "recherche qui est mal formulée : ne réessaie pas). Réponds avec ce que tu sais "
+                    "en disant que tu n'as pas pu vérifier. Pour une recherche fiable : régler un "
+                    "autre moteur (Réglages → Internet : SearXNG ou Brave)", status=202)
+
+
 async def _duckduckgo(session: aiohttp.ClientSession, query: str, limit: int) -> list[SearchResult]:
+    global _ddg_blocked_until
+    if time.monotonic() < _ddg_blocked_until:
+        raise _ddg_refusal()
     # kp=-2 : safe search désactivé
     async with session.post("https://html.duckduckgo.com/html/",
                             data={"q": query, "kl": "fr-fr", "kp": "-2"}) as response:
+        if response.status in DDG_REFUSED:
+            _ddg_blocked_until = time.monotonic() + DDG_PAUSE
+            Log.warning(f"DuckDuckGo refuse les recherches (HTTP {response.status}) : "
+                        f"plus de tentative pendant {DDG_PAUSE // 60} min")
+            raise _ddg_refusal()
         if response.status != 200:
             raise WebError(f"DuckDuckGo a répondu HTTP {response.status}")
         page = await response.text()
