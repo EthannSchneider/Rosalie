@@ -44,6 +44,11 @@ et `fetch_url` pour lire une page. Les pages construites en JavaScript sont ouve
 rapide d'abord, le navigateur seulement si la page est vide ou bloquée
 (`WEB_BROWSER=auto|always|never`).
 
+DuckDuckGo refuse parfois les recherches automatisées (HTTP 202), surtout quand elles
+s'enchaînent : Rosalie le dit, n'insiste pas (plus de tentative pendant 10 minutes) et répond
+avec ce qu'elle sait. Pour une recherche fiable, règle `web_search_provider` sur `searxng`
+(auto-hébergé, `searxng_url`) ou `brave` (clé API gratuite, `brave_api_key`).
+
 Elle cherche d'elle-même pour l'actualité, les prix… et cite ses sources. Les adresses du
 réseau local (localhost, 192.168.x…) sont refusées, y compris dans le navigateur, et le contenu
 web est traité comme des données, jamais comme des ordres. `WEB_ACCESS=false` pour tout couper.
@@ -61,6 +66,14 @@ sont ignorées, et au-delà de 4 images par message, les premières seulement so
 l'ordre : Brave / SearXNG si configurés, Openverse (sans clé), Wikimedia Commons si
 `WEB_CONTACT` est rempli, et en dernier recours l'image principale (`og:image`) des pages
 trouvées par la recherche web. 8 Mo max, logos/icônes ignorés.
+
+## Conteneurs Docker
+
+Avec le réglage `containers` et la permission `act.containers`, elle a un bac à sable : des
+conteneurs Docker à elle (nom toujours préfixé `rosalie-`), où elle lance ce qu'elle veut sans
+confirmation — `container_run`, `container_exec`, `container_logs`, `container_list`,
+`container_remove`. Aucun dossier de la machine n'y est monté. Détails et garde-fous :
+[Conteneurs Docker](conteneurs.md).
 
 ## Exécuter du code
 

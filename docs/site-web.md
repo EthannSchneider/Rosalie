@@ -48,6 +48,7 @@ fixées par le code (c'est lui qui les vérifie) ; les rôles se gèrent sur la 
 | `act.discord_manage` | Discord, gérer le serveur : salons, statut, invitations, purger / supprimer des messages |
 | `act.discord_moderate` | Discord, modérer : rôles, expulser, bannir, exclure, surnoms |
 | `act.code` | exécuter du code (toujours avec confirmation) |
+| `act.containers` | créer des conteneurs Docker `rosalie-…` et y lancer des commandes, sans confirmation ([Conteneurs](conteneurs.md)). Jamais donnée d'office, sauf au superadmin |
 | **Administration** | |
 | `personas` | créer, modifier et choisir les personnalités |
 | `settings` | tous les réglages de Rosalie |

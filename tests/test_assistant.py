@@ -436,3 +436,73 @@ class ToolPermissionsTest(unittest.TestCase):
         everything = Person("terminal", "me", "me", "Me", is_owner=True)   # permissions=None : tout
         self.assertTrue(everything.can("act.code"))
         self.assertEqual(len(schemas(person=everything)), len(schemas()))
+
+
+class SearchRefusedTest(unittest.TestCase):
+    def test_duckduckgo_refusal_is_not_retried(self):
+        """HTTP 202 = DuckDuckGo refuse les clients automatisés : message clair, et plus aucune
+        requête pendant un moment (on n'insiste pas, on ne contourne pas)."""
+        from libs import web
+
+        class Response:
+            status = 202
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+        class Session:
+            posts = 0
+
+            def post(self, *_, **__):
+                Session.posts += 1
+                return Response()
+
+        async def scenario():
+            errors = []
+            for _ in range(3):
+                try:
+                    await web._duckduckgo(Session(), "OACP", 5)
+                except web.WebError as error:
+                    errors.append(str(error))
+            return errors
+
+        with mock.patch.object(web, "_ddg_blocked_until", 0.0):
+            errors = asyncio.run(scenario())
+        self.assertEqual(Session.posts, 1)                    # une seule requête pour trois recherches
+        self.assertEqual(len(set(errors)), 1)
+        self.assertIn("ne réessaie pas", errors[0])
+        self.assertIn("SearXNG", errors[0])
+
+    def test_error_footer_is_sent_but_not_remembered(self):
+        """Le pied « ⚠️ … » part dans le message, pas dans l'historique : le modèle l'imitait."""
+        import tempfile
+        from collections import defaultdict
+        from pathlib import Path
+        from types import SimpleNamespace
+        from libs.conversation.memory import ConversationMemory
+        from libs.core.rosalie import Rosalie
+        from libs.core.types import Conversation, Person, Sent
+
+        sent = []
+
+        async def think(*_, **__):
+            return "Je n'ai pas pu chercher.", [{"role": "tool", "content": "Erreur"}], ["web_search : refus"] * 3
+
+        async def send(conversation, text, reply_to=None):
+            sent.append(text)
+            return Sent(1, conversation)
+
+        stub = SimpleNamespace(name="Rosalie", memory=ConversationMemory(Path(tempfile.mkdtemp())), send=send,
+                               decider=SimpleNamespace(is_dedicated=lambda key: False))
+        stub._Rosalie__locks = defaultdict(asyncio.Lock)
+        stub._Rosalie__think = think
+        conversation = Conversation("test", 5, "ici", True)
+        reply = asyncio.run(Rosalie.speak(stub, conversation, Person("test", 1, "u", "U", True)))
+        self.assertIn("⚠️ Une action a échoué", sent[0])
+        self.assertEqual(reply, sent[0])
+        remembered = stub.memory.get(conversation.key)[-1]
+        self.assertEqual(remembered.content, "Je n'ai pas pu chercher.")
+        self.assertTrue(remembered.tool_messages)

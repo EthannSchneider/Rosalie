@@ -1,13 +1,14 @@
 # Évolution du code
 
 Rosalie peut faire évoluer **son propre code** : son modèle principal délègue la modification à
-un **modèle de code** (spécialisé en programmation), qui travaille dans un clone isolé du dépôt
-et propose le résultat dans une **pull request**. Rien n'est fusionné ni appliqué tout seul : la
+l'agent de programmation **[opencode](https://opencode.ai)**, qui travaille avec le **modèle de
+code** dans un **conteneur Docker** (un clone isolé du dépôt y est monté) et propose le résultat
+dans une **pull request**. Rien n'est fusionné ni appliqué tout seul : la
 fusion, puis la mise à jour et le redémarrage, sont des actions explicites d'un **superadmin**.
 
 ```mermaid
 flowchart LR
-    D["Demande<br/>(superadmin : chat ou site)"] --> A["Analyse"] --> M["Modification"] --> T["Tests"]
+    D["Demande<br/>(superadmin : chat ou site)"] --> M["opencode<br/>(conteneur Docker)"] --> T["Vérifications"]
     T --> PR["Pull request ouverte<br/>(attente de fusion)"]
     PR -->|"superadmin : Fusionner<br/>(ou fusion sur GitHub)"| F["Fusionnée"]
     F -->|"superadmin : Mettre à jour<br/>et redémarrer"| U["Mise à jour"] --> R["Redémarrage"]
@@ -27,8 +28,8 @@ sert quand son code doit changer :
 
 Il transmet au modèle de code un dossier complet — titre, raison, **objectif**, **contexte**,
 **contraintes**, **critères de réussite** — car le modèle de code ne voit pas la conversation.
-Le superadmin doit **confirmer** chaque lancement (boutons Discord, `o/n` au terminal, bouton sur
-le chat web). On peut aussi remplir ce dossier soi-même : site → menu → **Évolution du code** →
+Il n'y a **pas de confirmation** au lancement : le garde-fou est la pull request, relue avant
+toute fusion. On peut aussi remplir ce dossier soi-même : site → menu → **Évolution du code** →
 *Demander une modification*.
 
 ## Configuration
@@ -42,10 +43,11 @@ code.
 | `evolve_repo` | Évolution du code | dépôt GitHub `propriétaire/dépôt` (défaut : `EthannSchneider/Rosalie`) |
 | `evolve_base_branch` | Évolution du code | branche de référence (défaut : `main`) |
 | `github_token` | Évolution du code | jeton GitHub (secret, jamais renvoyé au navigateur) |
-| `evolve_max_steps` | Évolution du code | nombre max d'actions du modèle de code par demande |
 | `evolve_check_timeout` | Évolution du code | durée max de chaque vérification |
-| `code_model` | Modèles | le modèle de code, `fournisseur:nom` (vide = le modèle principal) |
-| `code_num_ctx` | Modèles | sa mémoire de travail (tokens) |
+| `evolve_image` | Évolution du code | image du conteneur de travail (défaut : `rosalie-evolve:latest`, construite au premier besoin) |
+| `evolve_timeout` | Évolution du code | durée max du travail d'opencode |
+| `containers` | Conteneurs | **obligatoire** : opencode travaille dans un conteneur Docker ([Conteneurs](conteneurs.md)) ; `containers_network` doit rester sur oui |
+| `code_model` | Modèles | le modèle de code utilisé par opencode, `fournisseur:nom` (vide = le modèle principal) |
 
 Le fournisseur du modèle de code doit être activé dans l'onglet **Providers** (avec sa clé API) :
 on peut garder un modèle principal local (Ollama) et confier le code à un modèle distant.
@@ -55,6 +57,7 @@ python bot.py settings set providers ollama,anthropic
 python bot.py settings set anthropic_api_key          # demandé sans écho
 python bot.py settings set code_model anthropic:claude-sonnet-5-5
 python bot.py settings set github_token               # demandé sans écho
+python bot.py settings set containers oui             # Docker doit être installé et lancé
 python bot.py settings set evolve oui
 ```
 
@@ -84,31 +87,71 @@ redémarrer. Elle est **réservée au rôle superadmin** : on ne peut la donner 
 **côté serveur** à chaque fois :
 
 - l'outil `request_code_change` n'est proposé au modèle, et exécuté, que si la personne qui
-  parle a cette permission — puis elle doit encore confirmer ;
+  parle a cette permission (sans confirmation) ;
 - les routes `/api/v1/evolution…` exigent cette permission ;
 - un message d'un autre utilisateur, une page web ou un fichier lu ne sont jamais des ordres :
   ils ne peuvent ni lancer une modification, ni fusionner, ni redémarrer.
 
 Au terminal (`python bot.py chat`), c'est ta machine : tu as tous les droits.
 
-## Ce que fait le modèle de code
+## Ce qui se passe
 
 1. **Clone** du dépôt dans un dossier temporaire, hors du dossier de Rosalie, supprimé à la fin.
 2. **Branche dédiée** `rosalie/evolve-<n>-<titre>` créée depuis la branche de référence à jour.
-3. **Examen** : il reçoit `AGENTS.md` d'emblée, puis liste, cherche et lit les fichiers.
-4. **Modifications** : écrire, remplacer, supprimer des fichiers — seulement dans le clone.
-5. **Vérifications** : `python -m compileall`, `python bot.py test`, et la construction du site
-   si `webui/` a changé. Elles sont relancées une dernière fois sur l'état exact qui sera poussé.
-6. **Commit, push de la branche, pull request**.
+3. **Conteneur de travail** `rosalie-evolve-<n>` (supprimé à la fin), où le clone est monté sur
+   `/workspace`.
+4. **opencode** y fait tout le travail — lire le dépôt (`AGENTS.md` compris), modifier, lancer
+   les tests — avec un shell complet : il peut lancer ce qu'il veut (`pip install`, `npm`,
+   `curl`, un test ciblé…). Rosalie ne lit pas le dépôt elle-même : elle suit seulement
+   l'avancement (dernière ligne affichée par opencode, visible sur la page *Évolution du code*).
+5. **Vérifications finales**, dans le conteneur : `python -m compileall`, `python bot.py test`,
+   et la construction du site si `webui/` a changé, sur l'état exact qui sera poussé.
+6. **Commit, push de la branche, pull request** — faits par l'hôte, pas par le conteneur.
 
-**Mémoire de travail.** Un travail long ne tient pas dans le contexte du modèle. Plutôt que
-d'échouer, le modèle de code oublie le plus ancien : d'abord les vieux résultats d'outils et les
-contenus déjà écrits, puis les plus vieux échanges, remplacés par un **journal** de ce qu'il a déjà
-fait (fichiers lus, modifiés, vérifications). Les consignes et la demande ne sont jamais retirées.
-Si le contexte réel est plus petit que `code_num_ctx` (limite du modèle, ou
-`OLLAMA_CONTEXT_LENGTH` du serveur) et qu'Ollama coupe la demande, il réduit sa cible et réessaie.
-Il n'échoue que si les consignes et la demande seules ne rentrent pas. Avec peu de contexte il
-relit davantage et avance moins par étape : augmente `evolve_max_steps` si besoin.
+### Le conteneur
+
+- le code modifié n'est **jamais exécuté sur la machine** de Rosalie : opencode et les
+  vérifications tournent dans le conteneur ;
+- le dossier **`.git` du clone est caché** dans le conteneur (recouvert par un dossier vide) :
+  rien de ce qui y tourne ne peut toucher à la configuration ou aux hooks de git, que l'hôte
+  utilise ensuite pour le commit et le push. Le **jeton GitHub n'entre jamais** dans le conteneur ;
+- si opencode a modifié un chemin protégé (`.github`, `storages`, `.env`), la modification est
+  **annulée** avant le commit, et c'est écrit dans les risques de la pull request.
+
+L'image par défaut (`deploy/docker/evolve.Dockerfile` : Python et les dépendances de Rosalie,
+Node, git, opencode) est construite toute seule au premier lancement (quelques minutes).
+Reconstruis-la quand `requirements.txt` change :
+`docker build -t rosalie-evolve:latest -f deploy/docker/evolve.Dockerfile .`
+
+### Redémarrer Rosalie pendant le travail
+
+opencode tourne **en détaché** dans son conteneur : si Rosalie s'arrête ou redémarre pendant
+qu'il travaille, il **continue**. Au démarrage, Rosalie retrouve le conteneur et le clone, et
+**reprend le suivi** là où il en était (événement « Reprise après le redémarrage » dans le
+journal), jusqu'à la pull request. La durée max (`evolve_timeout`) est comptée dans le conteneur,
+redémarrage ou pas.
+
+L'opération n'est marquée en échec au redémarrage que si le travail est vraiment perdu :
+conteneur arrêté ou supprimé (redémarrage de la machine ou de Docker), ou clone disparu. Un
+arrêt de Rosalie *avant* le lancement d'opencode (clone, démarrage du conteneur) ou *après*
+(vérifications finales, push) interrompt l'opération comme avant, sauf si le conteneur est encore
+là : les étapes finales sont alors rejouées.
+
+### Le modèle
+
+opencode utilise le `code_model` des réglages :
+
+- **Ollama** : il le joint sur la machine par `host.docker.internal`. Sous Linux, Ollama doit
+  écouter ailleurs que sur `127.0.0.1` seulement (`OLLAMA_HOST=0.0.0.0`) ; et comme opencode
+  ne règle pas la taille du contexte, monte `OLLAMA_CONTEXT_LENGTH` côté serveur (32 000 ou
+  plus). Un petit modèle local (8B) s'en sort mal comme agent de code sur un dépôt de cette
+  taille : préfère un modèle de code plus gros, ou distant ;
+- **OpenAI, Anthropic, Gemini** : la **clé API du fournisseur est donnée au conteneur** (c'est
+  le seul secret qui y entre). Un agent trompé par un contenu lu pourrait la divulguer : utilise
+  une clé dédiée, avec un plafond de dépense.
+
+opencode écrit son compte rendu (titre, résumé, risques) dans un fichier hors du dépôt ; s'il ne
+le fait pas, la pull request reprend le titre de la demande et la fin de sa sortie.
 
 La pull request explique **pourquoi** (raison, demandeur, objectif, contexte), **ce qui a été
 modifié** (résumé, fichiers), **les vérifications** (résultat de chacune) et **les risques ou
@@ -117,20 +160,17 @@ ouverte en brouillon et le bouton *Fusionner* du site est refusé (à toi de tra
 
 Garde-fous :
 
-- pas de shell ni de réseau pour le modèle de code : seulement des outils de fichiers enfermés
-  dans le clone, et les vérifications prévues ;
-- il ne peut modifier ni `.git`, ni `.github`, ni `.env`, ni `storages` ;
+- le modèle de code n'a de shell que dans son conteneur : rien ne tourne sur l'hôte ;
+- il ne peut modifier ni `.git` (caché), ni `.github`, ni `.env`, ni `storages` (annulé) ;
 - jamais de push sur la branche de référence, jamais de push forcé, jamais de fusion automatique ;
-- si le modèle ne termine pas, ne modifie rien, ou si la modification contient un secret des
+- si opencode échoue ou dépasse `evolve_timeout`, ne modifie rien, ou si la modification contient un secret des
   réglages : rien n'est poussé, l'opération est en échec ;
 - le jeton passe à git par l'environnement (ni ligne de commande, ni adresse du dépôt) ; les
   secrets des réglages sont masqués dans les messages, les journaux, l'historique et la PR ;
 - une seule modification à la fois, et aucune pendant une mise à jour.
 
-⚠️ Les vérifications **exécutent le code modifié** (les tests) sur la machine de Rosalie, sous
-son compte : sans secrets dans l'environnement et avec des données à part, mais ce n'est pas un
-bac à sable. C'est une raison de plus pour réserver la fonctionnalité au superadmin et pour
-relire chaque pull request.
+⚠️ Le conteneur a accès au réseau (opencode doit joindre son modèle, installer des paquets) :
+il peut atteindre internet et ton réseau local. Relis chaque pull request.
 
 ## Fusion
 
@@ -208,8 +248,10 @@ mise à jour réussie ou annulée. L'historique est gardé dans `storages/rosali
 | Fichier | Rôle |
 |---|---|
 | `libs/evolve/service.py` | `Evolver` : orchestration, fusion, demande de mise à jour, suivi |
-| `libs/evolve/workspace.py` | clone isolé, git, outils de fichiers, vérifications |
-| `libs/evolve/coder.py` | boucle d'outils du modèle de code |
+| `libs/evolve/workspace.py` | clone isolé, git, vérifications |
+| `libs/evolve/sandbox.py` | conteneur de travail `rosalie-evolve-<n>` |
+| `libs/evolve/opencode.py` | opencode en détaché dans le conteneur, suivi, compte rendu |
+| `deploy/docker/evolve.Dockerfile` | image du conteneur de travail |
 | `libs/evolve/github.py` | API GitHub (pull requests) |
 | `libs/supervisor.py` · `commands/supervise.py` | le superviseur |
 | `libs/models/evolution.py` | historique des opérations (migration `0006`) |

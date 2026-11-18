@@ -33,6 +33,7 @@ from libs.core.interface import Interface
 from libs.core.text import split_message
 from libs.core.types import Conversation, Incoming, OutgoingFile, Person, Sent, split_key
 from libs.dataset.store import DatasetStore
+from libs.containers import Docker
 from libs.evolve import Evolver
 from libs.llm.ollama import OllamaClient, OllamaError
 from libs.llm.persona import Persona
@@ -85,6 +86,7 @@ class Rosalie:
         self.decider = ReplyDecider(lambda: self.config, self.llm, self.settings)
         self.browser = VirtualBrowser(web.USER_AGENT)   # ne démarre Chromium qu'au besoin
         self.heartbeat = Heartbeat(self)
+        self.docker = Docker()                          # ses conteneurs « rosalie-… » (libs/containers)
         self.evolver = Evolver(self)                    # évolution de son propre code (libs/evolve)
         self.interfaces: dict[str, Interface] = {}
 
@@ -290,7 +292,11 @@ class Rosalie:
             reply, trace, errors = await self.__think(conversation, person, query, note,
                                                       typing=reply_to is not None,
                                                       must_reply=must_reply, images=images)
-            if errors:   # une erreur est toujours dite, même si elle comptait se taire
+            # Une erreur est toujours dite, même si elle comptait se taire. Le pied « ⚠️ … » est
+            # envoyé mais pas gardé en mémoire : relu dans l'historique, le modèle l'imite (les
+            # erreurs y sont déjà, dans les résultats d'outils).
+            said = reply
+            if errors:
                 reply = "\n\n".join(filter(None, [reply, errors_footer(errors)]))
 
             if reply is None:
@@ -307,7 +313,7 @@ class Rosalie:
                 and not self.decider.is_dedicated(conversation.key) else None
             sent = await self.send(conversation, reply, reply_to=quote)
             self.memory.add(conversation.key, Entry(
-                author_id=ROSALIE_ID, author_name=self.name, content=reply, is_bot=True,
+                author_id=ROSALIE_ID, author_name=self.name, content=said or "", is_bot=True,
                 message_id=sent.id, acted=bool(trace), tool_messages=trace,
                 spontaneous=spontaneous))
             return reply

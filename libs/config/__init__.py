@@ -71,7 +71,6 @@ class Config:
     decider_model: str                 # vide dans les réglages = modèle principal (résolu ici)
     embed_model: str
     code_model: str                    # vide dans les réglages = modèle principal (résolu ici)
-    code_num_ctx: int
     num_ctx: int
     temperature: float
 
@@ -99,12 +98,22 @@ class Config:
     code_timeout: int
     code_max_runs: int
 
+    # Conteneurs Docker (libs/containers)
+    containers: bool
+    containers_image: str
+    containers_max: int
+    containers_memory: str
+    containers_cpus: float
+    containers_timeout: int
+    containers_network: bool
+
     # Évolution du code (libs/evolve)
     evolve: bool
     evolve_repo: str
     evolve_base_branch: str
     github_token: str
-    evolve_max_steps: int
+    evolve_image: str
+    evolve_timeout: int
     evolve_check_timeout: int
 
     # Rythme : attendre que tu aies fini d'écrire avant de répondre
