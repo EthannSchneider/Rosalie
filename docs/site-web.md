@@ -48,13 +48,11 @@ fixées par le code (c'est lui qui les vérifie) ; les rôles se gèrent sur la 
 | `act.discord_manage` | Discord, gérer le serveur : salons, statut, invitations, purger / supprimer des messages |
 | `act.discord_moderate` | Discord, modérer : rôles, expulser, bannir, exclure, surnoms |
 | `act.code` | exécuter du code (toujours avec confirmation) |
-| `act.containers` | créer des conteneurs Docker `rosalie-…` et y lancer des commandes, sans confirmation ([Conteneurs](conteneurs.md)). Jamais donnée d'office, sauf au superadmin |
 | **Administration** | |
 | `personas` | créer, modifier et choisir les personnalités |
 | `settings` | tous les réglages de Rosalie |
 | `users` | gérer les utilisateurs |
 | `roles` | gérer les rôles |
-| `evolve` | faire modifier son code, fusionner, mettre à jour et redémarrer — **réservée au superadmin**, ne peut être donnée à aucun autre rôle ([Évolution du code](evolution.md)) |
 
 Avec **au moins une** permission « Faire agir Rosalie », elle traite la personne comme son
 créateur (conversation de créateur) ; elle ne lui propose et n'exécute que les outils que ces
@@ -171,8 +169,6 @@ L'API est **versionnée** : tout est sous `/api/v1`. Une version incompatible de
 | GET | `/roles` (rôles + catalogue des permissions) | `roles` ou `users` |
 | POST · PATCH · DELETE | `/roles` · `/roles/{nom}` | `roles` |
 | GET · POST | `/users` ; PATCH · DELETE `/users/{id}` | `users` |
-| GET | `/health` (« Rosalie répond », pour le superviseur) | public |
-| GET · POST | `/evolution` ; POST `/evolution/{id}/merge` · `/evolution/{id}/update` ([Évolution du code](evolution.md)) | `evolve` (superadmin seulement) |
 | GET · POST · DELETE | `/chat/messages` (DELETE = effacer la conversation) | `chat` |
 | GET | `/chat/events` (Server-Sent Events) · `/chat/files/{id}` | `chat` |
 | POST | `/chat/typing` · `/chat/confirmations/{id}` | `chat` |

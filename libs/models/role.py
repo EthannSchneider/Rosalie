@@ -42,24 +42,12 @@ PERMISSIONS: dict[str, tuple[str, str, str]] = {
                              "exclure temporairement, changer un surnom.", ACT),
     "act.code": ("Exécuter du code", "Elle propose du code Python / bash qui tourne après ta "
                  "confirmation.", ACT),
-    "act.containers": ("Conteneurs Docker", "Elle crée des conteneurs Docker (préfixés « rosalie- ») et y "
-                       "lance les commandes qu'elle veut, sans confirmation (bac à sable).", ACT),
     "personas": ("Personnalités", "Créer, modifier et choisir les personnalités.", ADMIN),
     "settings": ("Réglages", "Modifier tous les réglages de Rosalie (token Discord, modèle, outils…).", ADMIN),
     "users": ("Utilisateurs", "Créer, modifier, supprimer les comptes et choisir leur rôle.", ADMIN),
     "roles": ("Rôles", "Créer et modifier les rôles et leurs permissions.", ADMIN),
-    "evolve": ("Évolution du code", "Lui faire modifier son propre code (pull request), fusionner, "
-               "mettre à jour et redémarrer. Réservée au superadmin.", ADMIN),
 }
-# Jamais données à un autre rôle que superadmin (ni par le site, ni en base, ni par les anciens
-# OWNER_IDS) : faire évoluer le code, c'est avoir tous les droits sur la machine.
-SUPERADMIN_ONLY = frozenset({"evolve"})
-GRANTABLE = tuple(name for name in PERMISSIONS if name not in SUPERADMIN_ONLY)
 ACT_PERMISSIONS = tuple(name for name, (_, _, group) in PERMISSIONS.items() if group == ACT)
-# Ajoutées après coup et jamais données d'office à un rôle existant ou de départ (lancer des
-# commandes dans des conteneurs se décide rôle par rôle) ; superadmin les a comme tout le reste.
-OPT_IN = frozenset({"act.containers"})
-DEFAULT_ACT = tuple(name for name in ACT_PERMISSIONS if name not in OPT_IN)
 
 
 def acts(permissions) -> bool:
@@ -69,9 +57,9 @@ def acts(permissions) -> bool:
 
 # Rôles créés au départ (migration main 0003). superadmin est verrouillé ; les autres se modifient.
 DEFAULT_ROLES: list[dict[str, Any]] = [
-    {"name": SUPERADMIN, "label": "Superadmin", "locked": True, "permissions": list(GRANTABLE),
+    {"name": SUPERADMIN, "label": "Superadmin", "locked": True, "permissions": list(PERMISSIONS),
      "description": "Tout, y compris les rôles et les utilisateurs. Il en reste toujours au moins un."},
-    {"name": "admin", "label": "Admin", "locked": False, "permissions": ["chat", "web", *DEFAULT_ACT],
+    {"name": "admin", "label": "Admin", "locked": False, "permissions": ["chat", "web", *ACT_PERMISSIONS],
      "description": "Rosalie agit pour lui (outils, souvenirs, code), sur le chat web et sur Discord."},
     {"name": "user", "label": "Utilisateur", "locked": False, "permissions": ["chat", "web"],
      "description": "Discute avec Rosalie, comme un invité : discussion et recherche seulement."},
@@ -96,4 +84,4 @@ class Role(MainBase):
         """Permissions effectives (superadmin : toutes, même celles ajoutées plus tard)."""
         if self.name == SUPERADMIN:
             return frozenset(PERMISSIONS)
-        return frozenset(p for p in self.permissions if p in GRANTABLE)
+        return frozenset(p for p in self.permissions if p in PERMISSIONS)

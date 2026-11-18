@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from libs.config.schema import SettingError
 from libs.db import Database
-from libs.models.role import GRANTABLE, PERMISSIONS, ROLE_NAME, SUPERADMIN, SUPERADMIN_ONLY, Role
+from libs.models.role import PERMISSIONS, ROLE_NAME, SUPERADMIN, Role
 from libs.models.user import User
 
 
@@ -91,7 +91,4 @@ def _permissions(permissions) -> list[str]:
     unknown = [p for p in permissions if p not in PERMISSIONS]
     if unknown:
         raise SettingError(f"permission inconnue : {', '.join(map(str, unknown))} ({', '.join(PERMISSIONS)})")
-    reserved = [p for p in permissions if p in SUPERADMIN_ONLY]
-    if reserved:
-        raise SettingError(f"permission réservée au superadmin : {', '.join(reserved)}")
-    return [p for p in GRANTABLE if p in permissions]   # ordre canonique, sans doublon
+    return [p for p in PERMISSIONS if p in permissions]   # ordre canonique, sans doublon

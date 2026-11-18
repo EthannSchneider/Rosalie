@@ -1,5 +1,5 @@
 // Les routes du site. Les gardes renvoient vers /setup ou /login selon la session, et cachent
-// les pages réservées selon les permissions du rôle (chat, personas, settings, users, roles, evolve).
+// les pages réservées selon les permissions du rôle (chat, personas, settings, users, roles).
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout.jsx";
 import { Home, RequireAuth, RequireGuest, RequirePermission } from "./components/layout/guards.jsx";
@@ -10,7 +10,6 @@ import AccountPage from "./pages/account/AccountPage.jsx";
 import LoginPage from "./pages/auth/LoginPage.jsx";
 import SetupPage from "./pages/auth/SetupPage.jsx";
 import ChatPage from "./pages/chat/ChatPage.jsx";
-import EvolutionPage from "./pages/evolution/EvolutionPage.jsx";
 import RolesPage from "./pages/roles/RolesPage.jsx";
 import SettingsPage, { SettingsIndex } from "./pages/settings/SettingsPage.jsx";
 import SettingsSection from "./pages/settings/SettingsSection.jsx";
@@ -35,7 +34,6 @@ const router = createBrowserRouter([
       },
       { path: "users", element: <RequirePermission permission="users"><UsersPage /></RequirePermission> },
       { path: "roles", element: <RequirePermission permission="roles"><RolesPage /></RequirePermission> },
-      { path: "evolution", element: <RequirePermission permission="evolve"><EvolutionPage /></RequirePermission> },
       { path: "*", element: <Home /> },
     ],
   },

@@ -8,9 +8,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from libs.webui.controllers import (AccountController, ChatController, EvolutionController, RolesController,
+from libs.webui.controllers import (AccountController, ChatController, RolesController,
                                     SessionController, SettingsController, UsersController)
-from libs.webui.http import Json
 from libs.webui.router import Router
 
 if TYPE_CHECKING:
@@ -22,12 +21,8 @@ PREFIX = "/api/v1"
 def build(app: WebServer) -> tuple[Router, SimpleNamespace]:
     c = SimpleNamespace(session=SessionController(app), account=AccountController(app),
                         settings=SettingsController(app), users=UsersController(app),
-                        roles=RolesController(app), chat=ChatController(app),
-                        evolution=EvolutionController(app))
+                        roles=RolesController(app), chat=ChatController(app))
     r = Router(PREFIX)
-
-    # Santé : « Rosalie répond » (vérifié par le superviseur après une mise à jour)
-    r.add("GET", "/health", lambda request: Json({"ok": True}), access="public")
 
     # Session
     r.add("GET", "/session", c.session.show, access="public")
@@ -72,9 +67,4 @@ def build(app: WebServer) -> tuple[Router, SimpleNamespace]:
     r.add("POST", "/chat/confirmations/{id}", c.chat.confirm, access="chat")
     r.add("GET", "/chat/files/{id}", c.chat.file, access="chat")
 
-    # Évolution du code : permission « evolve », que seul le superadmin peut avoir
-    r.add("GET", "/evolution", c.evolution.index, access="evolve")
-    r.add("POST", "/evolution", c.evolution.create, access="evolve")
-    r.add("POST", "/evolution/{id}/merge", c.evolution.merge, access="evolve")
-    r.add("POST", "/evolution/{id}/update", c.evolution.update, access="evolve")
     return r, c

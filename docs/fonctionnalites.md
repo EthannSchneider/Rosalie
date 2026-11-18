@@ -13,7 +13,6 @@ invités*). Voir [Site web → Rôles](site-web.md#rôles-et-permissions).
 | Domaine | Outils |
 |---|---|
 | Initiative | `say` (parler tout de suite), `plan_followup`, `cancel_followup` (relances) |
-| Évolution du code | `request_code_change` (déléguer une modification de son code au modèle de code : pull request, avec confirmation), `code_changes` (suivi) — superadmin seulement, voir [Évolution du code](evolution.md) |
 | Mémoire | `remember`, `recall`, `forget` |
 | Internet | `web_search`, `fetch_url` |
 | Photos | `send_image`, `send_image_url` |
@@ -66,14 +65,6 @@ sont ignorées, et au-delà de 4 images par message, les premières seulement so
 l'ordre : Brave / SearXNG si configurés, Openverse (sans clé), Wikimedia Commons si
 `WEB_CONTACT` est rempli, et en dernier recours l'image principale (`og:image`) des pages
 trouvées par la recherche web. 8 Mo max, logos/icônes ignorés.
-
-## Conteneurs Docker
-
-Avec le réglage `containers` et la permission `act.containers`, elle a un bac à sable : des
-conteneurs Docker à elle (nom toujours préfixé `rosalie-`), où elle lance ce qu'elle veut sans
-confirmation — `container_run`, `container_exec`, `container_logs`, `container_list`,
-`container_remove`. Aucun dossier de la machine n'y est monté. Détails et garde-fous :
-[Conteneurs Docker](conteneurs.md).
 
 ## Exécuter du code
 

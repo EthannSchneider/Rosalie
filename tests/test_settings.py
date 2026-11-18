@@ -256,6 +256,32 @@ class ConfigStoreTest(StoreCase):
         finally:
             store.close()
 
+    def test_removed_settings_are_deleted(self):
+        """Réglages de l'évolution du code et des conteneurs (retirés) : la migration 0003 les
+        efface de la base, jeton GitHub compris."""
+        import sqlite3
+        root = self.root / "evolve"
+        root.mkdir()
+        db = sqlite3.connect(root / "config.sqlite3")
+        db.executescript("""
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO settings VALUES ('github_token', '"jeton"'), ('evolve', 'true'),
+                ('evolve_repo', '"a/b"'), ('containers', 'true'), ('containers_max', '3'),
+                ('code_model', '"ollama:x"'), ('code_exec', 'false');
+        """)
+        db.commit()
+        db.close()
+        store = ConfigStore(root / "config.sqlite3", builtin_personas=self.store.builtin_dir)
+        try:
+            db = sqlite3.connect(root / "config.sqlite3")
+            keys = {row[0] for row in db.execute("SELECT key FROM settings")}
+            db.close()
+            self.assertEqual(keys, {"code_exec"})          # « code_exec » n'est pas concerné
+            self.assertIs(store.get("code_exec"), False)
+        finally:
+            store.close()
+
     def test_persona_follows_settings(self):
         persona = Persona(lambda: self.store.get("persona"), self.store)
         self.assertEqual(persona.text, "Tu es Rosalie.")

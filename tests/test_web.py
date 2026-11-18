@@ -55,7 +55,7 @@ class MigrationsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Accounts(Path(tmp) / "rosalie.sqlite3").close()
             db = sqlite3.connect(Path(tmp) / "rosalie.sqlite3")
-            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0006")
+            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "0007")
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             self.assertIn("discord_id", columns)
             schema = db.execute("SELECT sql FROM sqlite_master WHERE name = 'users'").fetchone()[0]
@@ -158,10 +158,9 @@ class RolesTest(unittest.TestCase):
 
     def test_act_permissions_are_detailed(self):
         """L'ancien « act » est remplacé par act.memory, act.code… ; admin les a toutes."""
-        from libs.models.role import DEFAULT_ACT
+        from libs.models.role import ACT_PERMISSIONS
         admin = self.roles.get("admin")
-        self.assertEqual(set(admin.permissions), {"chat", "web", *DEFAULT_ACT})
-        self.assertNotIn("act.containers", admin.permissions)   # à donner explicitement
+        self.assertEqual(set(admin.permissions), {"chat", "web", *ACT_PERMISSIONS})
         self.roles.create("souvenirs", "Souvenirs", ["chat", "act.memory"])
         user = self.accounts.create("mia", "motdepasse", "souvenirs")
         self.assertTrue(user.is_owner)                      # au moins une act.* : owner
@@ -188,7 +187,7 @@ class ActMigrationTest(unittest.TestCase):
         from alembic import command
         from alembic.config import Config as AlembicConfig
         from libs.db.database import MIGRATIONS_DIR, make_engine
-        from libs.models.role import DEFAULT_ACT
+        from libs.models.role import ACT_PERMISSIONS
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rosalie.sqlite3"
             engine = make_engine(path)
@@ -204,9 +203,40 @@ class ActMigrationTest(unittest.TestCase):
             db.close()
             accounts = Accounts(path)                 # applique 0004
             # 0004 : act -> act.* ; 0005 : + web (ouverte à tous avant)
-            self.assertEqual(accounts.roles.get("modero").permissions, ["chat", "web", *DEFAULT_ACT, "users"])
+            self.assertEqual(accounts.roles.get("modero").permissions, ["chat", "web", *ACT_PERMISSIONS, "users"])
             self.assertEqual(accounts.roles.get("user").permissions, ["chat", "web"])
             accounts.close()
+
+    def test_removed_features_are_cleaned(self):
+        """Base à la révision 0006 avec l'ancienne table `evolutions` et les permissions retirées
+        (evolve, act.containers) -> 0007 : table supprimée, permissions enlevées des rôles."""
+        import sqlite3
+        from alembic import command
+        from alembic.config import Config as AlembicConfig
+        from libs.db.database import MIGRATIONS_DIR, make_engine
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rosalie.sqlite3"
+            engine = make_engine(path)
+            config = AlembicConfig()
+            config.set_main_option("script_location", str(MIGRATIONS_DIR / "main"))
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.upgrade(config, "0006")
+            engine.dispose()
+            db = sqlite3.connect(path)
+            db.execute("CREATE TABLE evolutions (id INTEGER PRIMARY KEY, status TEXT NOT NULL)")
+            db.execute("CREATE INDEX ix_evolutions_status ON evolutions (status)")
+            db.execute("INSERT INTO roles VALUES ('bricoleur', 'Bricoleur', '', "
+                       "'[\"chat\", \"act.code\", \"act.containers\", \"evolve\"]', 0, 0)")
+            db.commit()
+            db.close()
+            accounts = Accounts(path)                 # applique 0007
+            self.assertEqual(accounts.roles.get("bricoleur").permissions, ["chat", "act.code"])
+            accounts.close()
+            db = sqlite3.connect(path)
+            tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
+            db.close()
+            self.assertFalse({"evolutions", "ix_evolutions_status"} & tables)
 
 
 class AccountsTest(unittest.TestCase):
@@ -511,38 +541,6 @@ class ChatTest(unittest.TestCase):
         self.rosalie.accounts.close()
         self.store.close()
         self.tmp.cleanup()
-
-    def test_evolution_api(self):
-        """Avec Rosalie lancée : suivi lisible par le superadmin, demande refusée tant que
-        l'évolution du code est désactivée, puis lancée dans la boucle de Rosalie."""
-        from libs.containers import Docker
-        from libs.evolve import Evolver
-        self.rosalie.name = "Rosalie"
-        self.rosalie.interfaces = {}
-        self.rosalie.evolver = Evolver(self.rosalie, github=object(), remote="/nulle/part",
-                                       docker=Docker(binary="docker-absent-pour-les-tests"))
-        status, data = self.client.request("GET", "/api/v1/evolution")
-        self.assertEqual(status, 200)
-        self.assertEqual((data["operations"], data["supervised"], data["enabled"]), ([], False, False))
-        body = {"title": "Ajouter un salut", "reason": "feature", "objective": "Ajouter hello() dans app.py."}
-        status, error = self.client.request("POST", "/api/v1/evolution", body)
-        self.assertEqual(status, 400)
-        self.assertIn("désactivée", error["error"])
-        self.store.set("evolve", True)
-        self.store.set("containers", True)   # opencode travaille dans un conteneur
-        self.rosalie.config = Config.load(self.store, self.rosalie.config.storage_dir)
-        status, data = self.client.request("POST", "/api/v1/evolution", body)
-        self.assertEqual(status, 201)
-        self.assertEqual((data["operations"][0]["author"], data["operations"][0]["title"]),
-                         ("boss", "Ajouter un salut"))
-        # le dépôt n'existe pas : l'opération échoue proprement, et le suivi le dit
-        self.wait_for(lambda: self.client.request("GET", "/api/v1/evolution")[1]["operations"][0]["status"] == "failed")
-        status, error = self.client.request("POST", "/api/v1/evolution/1/update", {})
-        self.assertEqual(status, 400)
-        self.assertIn("fusionnée", error["error"])
-        lea = Client(self.web.server.url)
-        lea.request("POST", "/api/v1/session/login", {"username": "lea", "password": "motdepasse"})
-        self.assertEqual(lea.request("GET", "/api/v1/evolution")[0], 403)
 
     def wait_for(self, predicate, timeout=5.0):
         import time
