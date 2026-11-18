@@ -127,10 +127,13 @@ def _code_section(code_env: str) -> list[str]:
     ]
 
 
-def build_messages(system_prompt: str, entries: list[Entry], tools: bool = False) -> list[dict]:
+def build_messages(system_prompt: str, entries: list[Entry], tools: bool = False,
+                   images: tuple[str, ...] = ()) -> list[dict]:
     """Historique Discord -> messages Ollama (rôles fusionnés pour garder l'alternance).
     tools=True : rejoue aussi les appels d'outils passés, pour que le modèle sache ce qu'il a
-    réellement fait (message envoyé, à qui, avec quel texte)."""
+    réellement fait (message envoyé, à qui, avec quel texte).
+    images : data URIs du message courant, montrées au modèle multimodal (il ne les a vues
+    qu'une fois : dans l'historique, il n'en reste que la mention « [pièce jointe : …] »)."""
     messages = [{"role": "system", "content": system_prompt}]
     for entry in entries:
         role = "assistant" if entry.is_bot else "user"
@@ -141,6 +144,11 @@ def build_messages(system_prompt: str, entries: list[Entry], tools: bool = False
             messages[-1]["content"] += "\n" + entry.content
         else:
             messages.append({"role": role, "content": entry.content})
+    if images:   # rattachées au dernier message de la personne (le plus récent)
+        for message in reversed(messages):
+            if message["role"] == "user":
+                message["images"] = list(images)
+                break
     return messages
 
 

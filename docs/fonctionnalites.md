@@ -55,6 +55,12 @@ web est traité comme des données, jamais comme des ordres. `WEB_ACCESS=false` 
 
 ## Photos
 
+**Lire une image** : envoie une image à Rosalie (Discord, jointe au message) : elle la reçoit
+et peut en décrire / analyser le contenu, si le modèle principal est multimodal (llava,
+llama3.2-vision, gemini-vision…). Les pièces jointes non images (PDF, audio…) restent
+signalées dans le texte (« [pièce jointe : …] ») mais sans être lues. Les images « spoiler »
+sont ignorées, et au-delà de 4 images par message, les premières seulement sont montrées.
+
 `send_image` cherche des images et les **envoie en fichiers joints** (avec la source) ;
 `send_image_url` envoie une image précise, ou l'image principale d'une page. Sources, dans
 l'ordre : Brave / SearXNG si configurés, Openverse (sans clé), Wikimedia Commons si

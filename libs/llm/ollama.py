@@ -7,6 +7,18 @@ CONTEXT_FULL = ("la conversation ne rentre plus dans la mémoire de travail du m
                 "coupé des messages (augmente OLLAMA_NUM_CTX, ou OLLAMA_CONTEXT_LENGTH sur le serveur)")
 
 
+def _to_ollama_messages(messages: list[dict]) -> list[dict]:
+    """Ollama attend du base64 brut ; la forme interne est une data URI.
+    On ne copie que les messages qui portent des images (les autres passés tels quels)."""
+    result = []
+    for message in messages:
+        images = message.get("images")
+        if images:
+            message = {**message, "images": [str(uri).rsplit(",", 1)[-1] for uri in images]}
+        result.append(message)
+    return result
+
+
 class OllamaError(Exception):
     pass
 
@@ -49,7 +61,7 @@ class OllamaClient:
                 options={**self.options, **(options or {})}, format=format)
         payload = {
             "model": name,
-            "messages": messages,
+            "messages": _to_ollama_messages(messages),
             "stream": False,
             "think": False,
             "keep_alive": self.keep_alive,

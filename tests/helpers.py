@@ -67,6 +67,12 @@ class FakeDiscord(FakeInterface):
     describe_error = DiscordInterface.describe_error
     conversation_from = DiscordInterface.conversation_from
     destination = DiscordInterface.destination
+    # méthodes « privées » de DiscordInterface : on copie la fonction sous le nom mangle
+    # exact pour que `incoming_from` (défini dans DiscordInterface) les retrouve.
+    person_from = DiscordInterface.person_from
+    _DiscordInterface__images_from = DiscordInterface._DiscordInterface__images_from
+    _DiscordInterface__replied_author = DiscordInterface._DiscordInterface__replied_author
+    incoming_from = DiscordInterface.incoming_from
 
     def __init__(self, rosalie, client=None):
         super().__init__(rosalie)
